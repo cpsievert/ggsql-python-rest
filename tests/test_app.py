@@ -57,3 +57,20 @@ async def test_full_workflow():
         # Delete session
         response = await client.delete(f"/sessions/{session_id}")
         assert response.status_code == 200
+
+
+def test_shutdown_disposes_engines():
+    """Verify engine disposal runs on app shutdown."""
+    from unittest.mock import patch
+
+    registry = ConnectionRegistry()
+    app = create_app(registry)
+
+    # Patch dispose_all and trigger shutdown via lifespan
+    with patch.object(registry, "dispose_all") as mock_dispose:
+        with TestClient(app) as client:
+            # Verify state is set during lifespan startup
+            assert app.state.registry is registry
+            assert app.state.session_manager is not None
+        # After exiting TestClient, shutdown should have called dispose_all
+        mock_dispose.assert_called_once()

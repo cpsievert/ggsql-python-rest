@@ -13,15 +13,10 @@ from .._sessions import Session, SessionManager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
-# Dependency placeholder - will be overridden by app factory
-_session_manager: SessionManager | None = None
-
 
 def get_session_manager() -> SessionManager:
-    """Get the session manager instance."""
-    if _session_manager is None:
-        raise RuntimeError("SessionManager not initialized")
-    return _session_manager
+    """Dependency placeholder — overridden by app factory."""
+    raise RuntimeError("SessionManager not initialized")
 
 
 def get_session(

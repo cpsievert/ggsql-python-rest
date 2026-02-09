@@ -16,15 +16,10 @@ from ._sessions import get_session
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["query"])
 
-# Dependency placeholder - will be overridden by app factory
-_registry: ConnectionRegistry | None = None
-
 
 def get_registry() -> ConnectionRegistry:
-    """Get the connection registry instance."""
-    if _registry is None:
-        raise RuntimeError("ConnectionRegistry not initialized")
-    return _registry
+    """Dependency placeholder — overridden by app factory."""
+    raise RuntimeError("ConnectionRegistry not initialized")
 
 
 @router.post("/query", response_model=QueryResponse)

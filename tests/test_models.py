@@ -10,6 +10,9 @@ from ggsql_rest._models import (
     UploadResponse,
     SqlResponse,
     success_envelope,
+    ColumnSchema,
+    TableSchema,
+    SchemaResponse,
 )
 
 
@@ -84,3 +87,40 @@ def test_success_envelope_without_data():
     """success_envelope should return None data when called without argument."""
     envelope = success_envelope()
     assert envelope == {"status": "success", "data": None}
+
+
+def test_column_schema_serializes_camel_case():
+    col = ColumnSchema(column_name="region", data_type="VARCHAR")
+    dumped = col.model_dump(by_alias=True)
+    assert dumped == {"columnName": "region", "dataType": "VARCHAR", "minValue": None, "maxValue": None, "categoricalValues": None}
+
+
+def test_column_schema_with_stats():
+    col = ColumnSchema(column_name="price", data_type="DOUBLE", min_value="0.0", max_value="999.99")
+    dumped = col.model_dump(by_alias=True, exclude_none=True)
+    assert dumped == {"columnName": "price", "dataType": "DOUBLE", "minValue": "0.0", "maxValue": "999.99"}
+
+
+def test_table_schema_with_connection():
+    table = TableSchema(
+        table_name="sales",
+        connection="warehouse",
+        columns=[ColumnSchema(column_name="id", data_type="INTEGER")],
+    )
+    dumped = table.model_dump(by_alias=True)
+    assert dumped["tableName"] == "sales"
+    assert dumped["connection"] == "warehouse"
+    assert len(dumped["columns"]) == 1
+
+
+def test_schema_response():
+    schema = SchemaResponse(tables=[
+        TableSchema(
+            table_name="t1",
+            columns=[ColumnSchema(column_name="x", data_type="INTEGER")],
+        )
+    ])
+    dumped = schema.model_dump(by_alias=True)
+    assert len(dumped["tables"]) == 1
+    assert dumped["tables"][0]["tableName"] == "t1"
+    assert dumped["tables"][0]["connection"] is None

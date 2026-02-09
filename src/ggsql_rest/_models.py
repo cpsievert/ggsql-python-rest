@@ -87,6 +87,30 @@ class SqlResponse(CamelModel):
     truncated: bool
 
 
+class ColumnSchema(CamelModel):
+    """Schema for a single column."""
+
+    column_name: str
+    data_type: str
+    min_value: str | None = None
+    max_value: str | None = None
+    categorical_values: list[str] | None = None
+
+
+class TableSchema(CamelModel):
+    """Schema for a single table."""
+
+    table_name: str
+    connection: str | None = None
+    columns: list[ColumnSchema]
+
+
+class SchemaResponse(CamelModel):
+    """Response for schema endpoint."""
+
+    tables: list[TableSchema]
+
+
 # === Errors ===
 
 

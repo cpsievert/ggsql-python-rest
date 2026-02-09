@@ -2,11 +2,17 @@
 
 from fastapi import APIRouter, Depends, Request
 
-from .._models import QueryRequest, QueryResponse, QueryMetadata, SqlRequest, SqlResponse
+from .._models import (
+    QueryRequest,
+    QueryResponse,
+    QueryMetadata,
+    SqlRequest,
+    SqlResponse,
+)
 from .._connections import ConnectionRegistry
 from .._sessions import Session
 from .._query import execute_ggsql, execute_sql
-from ._sessions import get_session, get_session_manager
+from ._sessions import get_session
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["query"])
 

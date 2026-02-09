@@ -2,20 +2,17 @@
 
 from ggsql_rest._models import (
     QueryRequest,
-    SqlRequest,
-    SessionResponse,
-    UploadResponse,
-    TablesResponse,
     QueryMetadata,
     QueryResponse,
-    SqlResponse,
     ErrorDetail,
     ErrorResponse,
 )
 
 
 def test_query_request_with_connection():
-    req = QueryRequest(query="SELECT * FROM t VISUALISE x, y DRAW point", connection="warehouse")
+    req = QueryRequest(
+        query="SELECT * FROM t VISUALISE x, y DRAW point", connection="warehouse"
+    )
     assert req.query == "SELECT * FROM t VISUALISE x, y DRAW point"
     assert req.connection == "warehouse"
 

@@ -38,7 +38,9 @@ async def test_full_workflow():
     registry = ConnectionRegistry()
     app = create_app(registry)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         # Create session
         response = await client.post("/sessions")
         assert response.status_code == 200
@@ -47,7 +49,9 @@ async def test_full_workflow():
         # Query with inline data (avoids DuckDB thread safety issues in async tests)
         response = await client.post(
             f"/sessions/{session_id}/query",
-            json={"query": "SELECT * FROM (VALUES (1, 10), (2, 20), (3, 30)) AS test(x, y) VISUALISE x, y DRAW point"},
+            json={
+                "query": "SELECT * FROM (VALUES (1, 10), (2, 20), (3, 30)) AS test(x, y) VISUALISE x, y DRAW point"
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -68,7 +72,7 @@ def test_shutdown_disposes_engines():
 
     # Patch dispose_all and trigger shutdown via lifespan
     with patch.object(registry, "dispose_all") as mock_dispose:
-        with TestClient(app) as client:
+        with TestClient(app):
             # Verify state is set during lifespan startup
             assert app.state.registry is registry
             assert app.state.session_manager is not None

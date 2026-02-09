@@ -71,3 +71,20 @@ def test_session_uses_utc():
     assert session.last_accessed.tzinfo == timezone.utc
     session.touch()
     assert session.last_accessed.tzinfo == timezone.utc
+
+
+def test_create_triggers_cleanup():
+    """Creating a session cleans up expired ones."""
+    mgr = SessionManager(timeout_mins=0)  # Immediate expiry
+    s1 = mgr.create()
+    s1_id = s1.id
+
+    # Verify s1 is still in the internal dict (not yet cleaned up)
+    assert s1_id in mgr._sessions
+
+    # s1 is now expired. Creating s2 should clean it up.
+    s2 = mgr.create()
+    assert s2.id != s1_id
+
+    # Verify s1 is actually gone from internal dict (not just lazily expired on get)
+    assert s1_id not in mgr._sessions

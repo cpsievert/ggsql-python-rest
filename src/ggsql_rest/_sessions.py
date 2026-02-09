@@ -35,6 +35,7 @@ class SessionManager:
 
     def create(self) -> Session:
         """Create a new session."""
+        self.cleanup_expired()
         session_id = uuid.uuid4().hex
         session = Session(session_id, self._timeout_mins)
         self._sessions[session_id] = session

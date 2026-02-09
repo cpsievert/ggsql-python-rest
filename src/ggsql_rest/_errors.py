@@ -41,3 +41,23 @@ def register_error_handlers(app: FastAPI) -> None:
                 "error": {"type": exc.error_type, "message": exc.message},
             },
         )
+
+    @app.exception_handler(ValueError)
+    async def handle_value_error(request: Request, exc: ValueError) -> JSONResponse:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "error": {"type": "InvalidQuery", "message": str(exc)},
+            },
+        )
+
+    @app.exception_handler(KeyError)
+    async def handle_key_error(request: Request, exc: KeyError) -> JSONResponse:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "error": {"type": "ConnectionNotFound", "message": str(exc)},
+            },
+        )

@@ -83,3 +83,38 @@ async def test_execute_sql_local():
         assert "rows" in data
         assert "columns" in data
         assert len(data["rows"]) == 2
+
+
+@pytest.mark.anyio
+async def test_query_without_visualise_returns_400():
+    app, session_mgr, _ = create_test_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/sessions")
+        session_id = create_resp.json()["session_id"]
+
+        response = await client.post(
+            f"/sessions/{session_id}/query",
+            json={"query": "SELECT 1 AS x"},
+        )
+        assert response.status_code == 400
+        body = response.json()
+        assert body["status"] == "error"
+
+
+@pytest.mark.anyio
+async def test_query_unknown_connection_returns_400():
+    app, session_mgr, _ = create_test_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/sessions")
+        session_id = create_resp.json()["session_id"]
+
+        response = await client.post(
+            f"/sessions/{session_id}/query",
+            json={"query": "SELECT 1 VISUALISE x DRAW point", "connection": "nope"},
+        )
+        assert response.status_code == 400
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"]["type"] == "ConnectionNotFound"

@@ -5,6 +5,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from ggsql_rest._errors import register_error_handlers
 from ggsql_rest._sessions import SessionManager
 from ggsql_rest._routes._sessions import router, get_session_manager
 
@@ -15,6 +16,7 @@ def create_test_app() -> tuple[FastAPI, SessionManager]:
 
     app.dependency_overrides[get_session_manager] = lambda: session_mgr
     app.include_router(router)
+    register_error_handlers(app)
 
     return app, session_mgr
 
@@ -116,7 +118,9 @@ async def test_upload_unsupported_format():
         response = await client.post(f"/sessions/{session.id}/upload", files=files)
 
         assert response.status_code == 400
-        assert "Unsupported file format" in response.json()["detail"]
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"]["type"] == "InvalidRequest"
 
 
 @pytest.mark.anyio
@@ -130,3 +134,6 @@ async def test_upload_session_not_found():
         response = await client.post("/sessions/nonexistent/upload", files=files)
 
         assert response.status_code == 404
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"]["type"] == "SessionNotFound"

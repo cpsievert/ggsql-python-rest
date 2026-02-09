@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from ggsql_rest._errors import register_error_handlers
 from ggsql_rest._sessions import SessionManager
 from ggsql_rest._connections import ConnectionRegistry
 from ggsql_rest._routes._sessions import router as sessions_router, get_session_manager
@@ -19,6 +20,7 @@ def create_test_app() -> tuple[FastAPI, SessionManager, ConnectionRegistry]:
     app.dependency_overrides[get_registry] = lambda: registry
     app.include_router(sessions_router)
     app.include_router(query_router)
+    register_error_handlers(app)
 
     return app, session_mgr, registry
 

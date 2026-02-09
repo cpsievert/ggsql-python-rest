@@ -3,9 +3,10 @@
 import io
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, UploadFile
 import polars as pl
 
+from .._errors import invalid_request, session_not_found
 from .._models import SessionResponse, TablesResponse, UploadResponse
 from .._sessions import Session, SessionManager
 
@@ -29,7 +30,7 @@ def get_session(
     """Get a session by ID or raise 404."""
     session = session_mgr.get(session_id)
     if session is None:
-        raise HTTPException(404, f"Session '{session_id}' not found")
+        raise session_not_found(session_id)
     return session
 
 
@@ -49,7 +50,7 @@ def delete_session(
 ) -> dict:
     """Delete a session."""
     if not session_mgr.delete(session_id):
-        raise HTTPException(404, f"Session '{session_id}' not found")
+        raise session_not_found(session_id)
     return {"status": "deleted"}
 
 
@@ -66,7 +67,7 @@ async def upload_file(
 ) -> UploadResponse:
     """Upload a file to the session's DuckDB instance."""
     if file.filename is None:
-        raise HTTPException(400, "Filename is required")
+        raise invalid_request("Filename is required")
 
     # Derive table name from filename
     table_name = Path(file.filename).stem.replace("-", "_").replace(" ", "_")
@@ -83,7 +84,7 @@ async def upload_file(
     elif extension in (".json", ".jsonl", ".ndjson"):
         df = pl.read_json(io.BytesIO(content))
     else:
-        raise HTTPException(400, f"Unsupported file format: {extension}")
+        raise invalid_request(f"Unsupported file format: {extension}")
 
     # Register in session's DuckDB
     session.duckdb.register(table_name, df)

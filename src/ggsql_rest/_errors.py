@@ -24,6 +24,11 @@ def connection_not_found(name: str) -> ApiError:
     return ApiError(400, "ConnectionNotFound", f"Unknown connection: '{name}'")
 
 
+def invalid_request(message: str) -> ApiError:
+    """Create a generic 400 bad request error."""
+    return ApiError(400, "InvalidRequest", message)
+
+
 def register_error_handlers(app: FastAPI) -> None:
     """Register error handlers on the FastAPI app."""
 

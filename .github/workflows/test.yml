@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Configure git credentials
-        run: git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}".insteadOf "https://github.com/"
+        run: git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install dependencies
         run: uv sync

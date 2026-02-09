@@ -63,6 +63,14 @@ async def test_full_workflow():
         assert response.status_code == 200
 
 
+def test_version_matches_pyproject():
+    """Version in __init__ should come from pyproject.toml via metadata."""
+    from importlib.metadata import version
+    import ggsql_rest
+
+    assert ggsql_rest.__version__ == version("ggsql-rest")
+
+
 def test_shutdown_disposes_engines():
     """Verify engine disposal runs on app shutdown."""
     from unittest.mock import patch

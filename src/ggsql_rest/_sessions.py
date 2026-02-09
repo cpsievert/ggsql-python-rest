@@ -1,7 +1,7 @@
 """Session management for isolated DuckDB instances."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ggsql import DuckDBReader
 
@@ -11,19 +11,19 @@ class Session:
 
     def __init__(self, session_id: str, timeout_mins: int = 30):
         self.id = session_id
-        self.created_at = datetime.now()
-        self.last_accessed = datetime.now()
+        self.created_at = datetime.now(timezone.utc)
+        self.last_accessed = datetime.now(timezone.utc)
         self.timeout = timedelta(minutes=timeout_mins)
         self.duckdb = DuckDBReader("duckdb://memory")
         self.tables: list[str] = []
 
     def touch(self) -> None:
         """Update last accessed time."""
-        self.last_accessed = datetime.now()
+        self.last_accessed = datetime.now(timezone.utc)
 
     def is_expired(self) -> bool:
         """Check if session has expired."""
-        return datetime.now() - self.last_accessed > self.timeout
+        return datetime.now(timezone.utc) - self.last_accessed > self.timeout
 
 
 class SessionManager:

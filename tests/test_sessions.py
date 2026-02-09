@@ -1,6 +1,7 @@
 """Tests for session management."""
 
-from datetime import timedelta
+from datetime import timezone
+
 from ggsql_rest._sessions import Session, SessionManager
 
 
@@ -62,3 +63,11 @@ def test_session_manager_cleanup_expired():
     session_id = session.id
     mgr.cleanup_expired()
     assert mgr.get(session_id) is None
+
+
+def test_session_uses_utc():
+    session = Session("test", timeout_mins=30)
+    assert session.created_at.tzinfo == timezone.utc
+    assert session.last_accessed.tzinfo == timezone.utc
+    session.touch()
+    assert session.last_accessed.tzinfo == timezone.utc

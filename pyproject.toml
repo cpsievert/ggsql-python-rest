@@ -19,11 +19,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-ggsql = { git = "https://github.com/cpsievert/ggsql", branch = "main", subdirectory = "ggsql-python" }
-
-[project.optional-dependencies]
-test = ["pytest>=7.0", "httpx>=0.24"]
-dev = ["ruff>=0.1"]
+ggsql = { git = "https://github.com/posit-dev/ggsql", branch = "main", subdirectory = "ggsql-python" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ggsql_rest"]
@@ -32,4 +28,6 @@ packages = ["src/ggsql_rest"]
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.2",
+    "anyio>=4.0",
+    "ruff>=0.1",
 ]

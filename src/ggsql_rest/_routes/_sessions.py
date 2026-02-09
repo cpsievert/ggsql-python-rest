@@ -1,6 +1,7 @@
 """Session management routes."""
 
 import io
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, UploadFile
@@ -60,6 +61,27 @@ def list_tables(session: Session = Depends(get_session)) -> TablesResponse:
     return TablesResponse(tables=session.tables)
 
 
+def _sanitize_table_name(stem: str, existing_tables: list[str]) -> str:
+    """Sanitize a filename stem into a safe, unique DuckDB table name."""
+    # Replace non-alphanumeric chars with underscore
+    name = re.sub(r"[^a-zA-Z0-9_]", "_", stem)
+    # Collapse multiple underscores
+    name = re.sub(r"_+", "_", name)
+    # Strip leading/trailing underscores
+    name = name.strip("_")
+    # Prefix to namespace away from __remote_result_* internal tables
+    name = f"_upload_{name}" if name else "_upload_unnamed"
+
+    # Deduplicate if name already exists
+    base_name = name
+    counter = 2
+    while name in existing_tables:
+        name = f"{base_name}_{counter}"
+        counter += 1
+
+    return name
+
+
 @router.post("/{session_id}/upload", response_model=UploadResponse)
 async def upload_file(
     file: UploadFile,
@@ -69,8 +91,8 @@ async def upload_file(
     if file.filename is None:
         raise invalid_request("Filename is required")
 
-    # Derive table name from filename
-    table_name = Path(file.filename).stem.replace("-", "_").replace(" ", "_")
+    # Derive safe table name from filename
+    table_name = _sanitize_table_name(Path(file.filename).stem, session.tables)
 
     # Read file content
     content = await file.read()

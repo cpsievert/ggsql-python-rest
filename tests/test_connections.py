@@ -67,7 +67,37 @@ def test_extract_user_id():
 
     mock_request = MagicMock()
     mock_request.headers = {"X-User-Id": "user123"}
-    assert registry.extract_user_id(mock_request) == "user123"
+    assert registry._extract_user_id(mock_request) == "user123"
 
     mock_request.headers = {}
-    assert registry.extract_user_id(mock_request) == "anonymous"
+    assert registry._extract_user_id(mock_request) == "anonymous"
+
+
+def test_engine_cache_evicts_lru():
+    """Engines beyond max_engines are evicted (least-recently-used first)."""
+    registry = ConnectionRegistry(max_engines=2)
+
+    engines = {}
+    def factory(req):
+        user = req.headers.get("X-User-Id", "anon")
+        e = create_engine("sqlite:///:memory:")
+        engines[user] = e
+        return e
+
+    registry.register("db", factory)
+
+    def req(user: str):
+        mock = MagicMock()
+        mock.headers = {"X-User-Id": user}
+        return mock
+
+    # Fill cache to capacity
+    registry.get_engine("db", req("u1"))
+    registry.get_engine("db", req("u2"))
+    assert len(registry._engines) == 2
+
+    # Adding a third evicts u1 (the LRU)
+    registry.get_engine("db", req("u3"))
+    assert len(registry._engines) == 2
+    assert ("db", "u1") not in registry._engines
+    assert ("db", "u3") in registry._engines

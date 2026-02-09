@@ -18,5 +18,8 @@ htmlcov/
 .vscode/
 *.swp
 
+# uv
+uv.log
+
 # OS
 .DS_Store

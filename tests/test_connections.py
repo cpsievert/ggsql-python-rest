@@ -78,6 +78,7 @@ def test_engine_cache_evicts_lru():
     registry = ConnectionRegistry(max_engines=2)
 
     engines = {}
+
     def factory(req):
         user = req.headers.get("X-User-Id", "anon")
         e = create_engine("sqlite:///:memory:")

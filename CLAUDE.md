@@ -4,7 +4,7 @@ REST API server for ggsql with SQLAlchemy backend support.
 
 ## Architecture
 
-FastAPI server wrapping [ggsql-python](https://github.com/cpsievert/ggsql) bindings. Uses a hybrid execution model: SQL runs on remote databases (via SQLAlchemy), VISUALISE runs locally (via DuckDB).
+FastAPI server wrapping [ggsql-python](https://github.com/posit-dev/ggsql) bindings. Uses a hybrid execution model: SQL runs on remote databases (via SQLAlchemy), VISUALISE runs locally (via DuckDB).
 
 ```
 HTTP Client

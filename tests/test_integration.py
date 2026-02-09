@@ -1,6 +1,5 @@
 """Integration tests with SQLAlchemy backend."""
 
-import io
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text

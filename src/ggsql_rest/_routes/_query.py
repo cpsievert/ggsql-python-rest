@@ -8,6 +8,7 @@ from .._models import (
     QueryMetadata,
     SqlRequest,
     SqlResponse,
+    success_envelope,
 )
 from .._connections import ConnectionRegistry
 from .._sessions import Session
@@ -22,13 +23,13 @@ def get_registry() -> ConnectionRegistry:
     raise RuntimeError("ConnectionRegistry not initialized")
 
 
-@router.post("/query", response_model=QueryResponse)
+@router.post("/query")
 def query(
     request: Request,
     body: QueryRequest,
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
-) -> QueryResponse:
+) -> dict:
     """Execute a ggsql query."""
     engine = None
     if body.connection:
@@ -36,19 +37,21 @@ def query(
 
     result = execute_ggsql(body.query, session, engine)
 
-    return QueryResponse(
-        spec=result["spec"],
-        metadata=QueryMetadata(**result["metadata"]),
+    return success_envelope(
+        QueryResponse(
+            spec=result["spec"],
+            metadata=QueryMetadata(**result["metadata"]),
+        )
     )
 
 
-@router.post("/sql", response_model=SqlResponse)
+@router.post("/sql")
 def sql(
     request: Request,
     body: SqlRequest,
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
-) -> SqlResponse:
+) -> dict:
     """Execute a pure SQL query."""
     engine = None
     if body.connection:
@@ -56,4 +59,4 @@ def sql(
 
     result = execute_sql(body.query, session, engine)
 
-    return SqlResponse(**result)
+    return success_envelope(SqlResponse(**result))

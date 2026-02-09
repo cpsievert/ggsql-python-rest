@@ -1,19 +1,39 @@
 """Pydantic request/response models."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
+
+
+# === Base class for camelCase serialization ===
+
+
+class CamelModel(BaseModel):
+    """Base model that serializes to camelCase."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel,
+    )
+
+
+def success_envelope(data: CamelModel | None = None) -> dict:
+    """Wrap response data in success envelope."""
+    if data is None:
+        return {"status": "success", "data": None}
+    return {"status": "success", "data": data.model_dump(by_alias=True)}
 
 
 # === Requests ===
 
 
-class QueryRequest(BaseModel):
+class QueryRequest(CamelModel):
     """Request body for ggsql query execution."""
 
     query: str
     connection: str | None = None
 
 
-class SqlRequest(BaseModel):
+class SqlRequest(CamelModel):
     """Request body for pure SQL execution."""
 
     query: str
@@ -23,13 +43,13 @@ class SqlRequest(BaseModel):
 # === Responses ===
 
 
-class SessionResponse(BaseModel):
+class SessionResponse(CamelModel):
     """Response for session creation."""
 
     session_id: str
 
 
-class UploadResponse(BaseModel):
+class UploadResponse(CamelModel):
     """Response for file upload."""
 
     table_name: str
@@ -37,13 +57,13 @@ class UploadResponse(BaseModel):
     columns: list[str]
 
 
-class TablesResponse(BaseModel):
+class TablesResponse(CamelModel):
     """Response for listing tables."""
 
     tables: list[str]
 
 
-class QueryMetadata(BaseModel):
+class QueryMetadata(CamelModel):
     """Metadata about query execution."""
 
     rows: int
@@ -51,14 +71,14 @@ class QueryMetadata(BaseModel):
     layers: int
 
 
-class QueryResponse(BaseModel):
+class QueryResponse(CamelModel):
     """Response for ggsql query execution."""
 
     spec: dict
     metadata: QueryMetadata
 
 
-class SqlResponse(BaseModel):
+class SqlResponse(CamelModel):
     """Response for pure SQL execution."""
 
     rows: list[dict]

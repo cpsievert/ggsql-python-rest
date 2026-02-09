@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, UploadFile
 import polars as pl
 
 from .._errors import invalid_request, session_not_found
-from .._models import SessionResponse, TablesResponse, UploadResponse
+from .._models import SessionResponse, TablesResponse, UploadResponse, success_envelope
 from .._sessions import Session, SessionManager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -30,13 +30,13 @@ def get_session(
     return session
 
 
-@router.post("", response_model=SessionResponse)
+@router.post("")
 def create_session(
     session_mgr: SessionManager = Depends(get_session_manager),
-) -> SessionResponse:
+) -> dict:
     """Create a new session."""
     session = session_mgr.create()
-    return SessionResponse(session_id=session.id)
+    return success_envelope(SessionResponse(session_id=session.id))
 
 
 @router.delete("/{session_id}")
@@ -47,13 +47,13 @@ def delete_session(
     """Delete a session."""
     if not session_mgr.delete(session_id):
         raise session_not_found(session_id)
-    return {"status": "deleted"}
+    return success_envelope()
 
 
-@router.get("/{session_id}/tables", response_model=TablesResponse)
-def list_tables(session: Session = Depends(get_session)) -> TablesResponse:
+@router.get("/{session_id}/tables")
+def list_tables(session: Session = Depends(get_session)) -> dict:
     """List tables available in a session."""
-    return TablesResponse(tables=session.tables)
+    return success_envelope(TablesResponse(tables=session.tables))
 
 
 def _sanitize_table_name(stem: str, existing_tables: list[str]) -> str:
@@ -77,11 +77,11 @@ def _sanitize_table_name(stem: str, existing_tables: list[str]) -> str:
     return name
 
 
-@router.post("/{session_id}/upload", response_model=UploadResponse)
+@router.post("/{session_id}/upload")
 async def upload_file(
     file: UploadFile,
     session: Session = Depends(get_session),
-) -> UploadResponse:
+) -> dict:
     """Upload a file to the session's DuckDB instance."""
     if file.filename is None:
         raise invalid_request("Filename is required")
@@ -107,8 +107,10 @@ async def upload_file(
     session.duckdb.register(table_name, df)
     session.tables.append(table_name)
 
-    return UploadResponse(
-        table_name=table_name,
-        row_count=len(df),
-        columns=df.columns,
+    return success_envelope(
+        UploadResponse(
+            table_name=table_name,
+            row_count=len(df),
+            columns=df.columns,
+        )
     )

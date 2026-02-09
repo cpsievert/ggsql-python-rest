@@ -33,7 +33,9 @@ async def test_execute_query_local():
         # Create session via API
         create_resp = await client.post("/sessions")
         assert create_resp.status_code == 200
-        session_id = create_resp.json()["session_id"]
+        body = create_resp.json()
+        assert body["status"] == "success"
+        session_id = body["data"]["sessionId"]
 
         # Query with inline data (no need to pre-create table)
         response = await client.post(
@@ -44,7 +46,9 @@ async def test_execute_query_local():
         )
 
         assert response.status_code == 200
-        data = response.json()
+        body = response.json()
+        assert body["status"] == "success"
+        data = body["data"]
         assert "spec" in data
         assert "metadata" in data
 
@@ -70,7 +74,9 @@ async def test_execute_sql_local():
         # Create session via API
         create_resp = await client.post("/sessions")
         assert create_resp.status_code == 200
-        session_id = create_resp.json()["session_id"]
+        body = create_resp.json()
+        assert body["status"] == "success"
+        session_id = body["data"]["sessionId"]
 
         # Query with inline data
         response = await client.post(
@@ -79,7 +85,9 @@ async def test_execute_sql_local():
         )
 
         assert response.status_code == 200
-        data = response.json()
+        body = response.json()
+        assert body["status"] == "success"
+        data = body["data"]
         assert "rows" in data
         assert "columns" in data
         assert len(data["rows"]) == 2
@@ -91,7 +99,9 @@ async def test_query_without_visualise_returns_400():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         create_resp = await client.post("/sessions")
-        session_id = create_resp.json()["session_id"]
+        body = create_resp.json()
+        assert body["status"] == "success"
+        session_id = body["data"]["sessionId"]
 
         response = await client.post(
             f"/sessions/{session_id}/query",
@@ -108,7 +118,9 @@ async def test_query_unknown_connection_returns_400():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         create_resp = await client.post("/sessions")
-        session_id = create_resp.json()["session_id"]
+        body = create_resp.json()
+        assert body["status"] == "success"
+        session_id = body["data"]["sessionId"]
 
         response = await client.post(
             f"/sessions/{session_id}/query",

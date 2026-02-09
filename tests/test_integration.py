@@ -29,13 +29,15 @@ async def test_remote_query_with_sqlite():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Create session
-        response = await client.post("/sessions")
+        response = await client.post("/api/v1/sessions")
         assert response.status_code == 200
-        session_id = response.json()["session_id"]
+        body = response.json()
+        assert body["status"] == "success"
+        session_id = body["data"]["sessionId"]
 
         # Query remote database
         response = await client.post(
-            f"/sessions/{session_id}/query",
+            f"/api/v1/sessions/{session_id}/query",
             json={
                 "query": "SELECT * FROM sales VISUALISE x, y DRAW point",
                 "connection": "test_db",
@@ -43,7 +45,9 @@ async def test_remote_query_with_sqlite():
         )
 
         assert response.status_code == 200
-        data = response.json()
+        body = response.json()
+        assert body["status"] == "success"
+        data = body["data"]
         assert "spec" in data
         assert data["metadata"]["rows"] == 3
 
@@ -66,12 +70,14 @@ async def test_sql_endpoint_with_remote():
     app = create_app(registry)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/sessions")
+        response = await client.post("/api/v1/sessions")
         assert response.status_code == 200
-        session_id = response.json()["session_id"]
+        body = response.json()
+        assert body["status"] == "success"
+        session_id = body["data"]["sessionId"]
 
         response = await client.post(
-            f"/sessions/{session_id}/sql",
+            f"/api/v1/sessions/{session_id}/sql",
             json={
                 "query": "SELECT * FROM users",
                 "connection": "test_db",
@@ -79,7 +85,9 @@ async def test_sql_endpoint_with_remote():
         )
 
         assert response.status_code == 200
-        data = response.json()
+        body = response.json()
+        assert body["status"] == "success"
+        data = body["data"]
         assert len(data["rows"]) == 2
         assert data["columns"] == ["id", "name"]
 
@@ -117,13 +125,15 @@ async def test_remote_query_with_filter():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Create session
-        response = await client.post("/sessions")
+        response = await client.post("/api/v1/sessions")
         assert response.status_code == 200
-        session_id = response.json()["session_id"]
+        body = response.json()
+        assert body["status"] == "success"
+        session_id = body["data"]["sessionId"]
 
         # Query remote database with filter
         response = await client.post(
-            f"/sessions/{session_id}/query",
+            f"/api/v1/sessions/{session_id}/query",
             json={
                 "query": """
                     SELECT * FROM products
@@ -135,6 +145,8 @@ async def test_remote_query_with_filter():
         )
 
         assert response.status_code == 200
-        data = response.json()
+        body = response.json()
+        assert body["status"] == "success"
+        data = body["data"]
         # Should only have 2 electronics items
         assert data["metadata"]["rows"] == 2

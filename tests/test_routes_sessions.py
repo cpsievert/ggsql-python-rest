@@ -25,9 +25,11 @@ def test_create_session():
 
     response = client.post("/sessions")
     assert response.status_code == 200
-    data = response.json()
-    assert "session_id" in data
-    assert len(data["session_id"]) == 32
+    body = response.json()
+    assert body["status"] == "success"
+    data = body["data"]
+    assert "sessionId" in data
+    assert len(data["sessionId"]) == 32
 
 
 def test_delete_session():
@@ -39,7 +41,7 @@ def test_delete_session():
 
     response = client.delete(f"/sessions/{session.id}")
     assert response.status_code == 200
-    assert response.json() == {"status": "deleted"}
+    assert response.json() == {"status": "success", "data": None}
 
 
 def test_delete_session_not_found():
@@ -61,7 +63,9 @@ def test_list_tables_empty():
 
     response = client.get(f"/sessions/{session.id}/tables")
     assert response.status_code == 200
-    assert response.json() == {"tables": []}
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["data"] == {"tables": []}
 
 
 def test_list_tables_not_found():

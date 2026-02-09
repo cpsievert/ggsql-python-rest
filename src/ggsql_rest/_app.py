@@ -3,7 +3,7 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
 from ._connections import ConnectionRegistry
@@ -57,9 +57,13 @@ def create_app(
     # Register error handlers
     register_error_handlers(app)
 
-    # Register routes
-    app.include_router(_health.router)
-    app.include_router(_sessions.router)
-    app.include_router(_query.router)
+    # Create /api/v1 router and register sub-routes
+    api_v1 = APIRouter(prefix="/api/v1")
+    api_v1.include_router(_health.router)
+    api_v1.include_router(_sessions.router)
+    api_v1.include_router(_query.router)
+
+    # Mount the versioned API
+    app.include_router(api_v1)
 
     return app

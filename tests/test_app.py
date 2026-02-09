@@ -13,8 +13,8 @@ def test_create_app():
 
     client = TestClient(app)
 
-    # Health check should work
-    response = client.get("/health")
+    # Health check should work at /api/v1 prefix
+    response = client.get("/api/v1/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
@@ -26,7 +26,7 @@ def test_create_app_with_cors():
     # CORS headers should be present
     client = TestClient(app)
     response = client.options(
-        "/health",
+        "/api/v1/health",
         headers={"Origin": "http://localhost:3000"},
     )
     assert "access-control-allow-origin" in response.headers
@@ -42,25 +42,30 @@ async def test_full_workflow():
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         # Create session
-        response = await client.post("/sessions")
+        response = await client.post("/api/v1/sessions")
         assert response.status_code == 200
-        session_id = response.json()["session_id"]
+        body = response.json()
+        assert body["status"] == "success"
+        session_id = body["data"]["sessionId"]
 
         # Query with inline data (avoids DuckDB thread safety issues in async tests)
         response = await client.post(
-            f"/sessions/{session_id}/query",
+            f"/api/v1/sessions/{session_id}/query",
             json={
                 "query": "SELECT * FROM (VALUES (1, 10), (2, 20), (3, 30)) AS test(x, y) VISUALISE x, y DRAW point"
             },
         )
         assert response.status_code == 200
-        data = response.json()
+        body = response.json()
+        assert body["status"] == "success"
+        data = body["data"]
         assert "spec" in data
         assert "metadata" in data
 
         # Delete session
-        response = await client.delete(f"/sessions/{session_id}")
+        response = await client.delete(f"/api/v1/sessions/{session_id}")
         assert response.status_code == 200
+        assert response.json() == {"status": "success", "data": None}
 
 
 def test_version_matches_pyproject():

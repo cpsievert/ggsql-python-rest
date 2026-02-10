@@ -37,24 +37,31 @@ uv sync
 The simplest way to run the server is with the `ggsql-rest` CLI:
 
 ```bash
-# Start with no connections (local DuckDB only)
-ggsql-rest
+# Start with sample data (products, sales, employees tables)
+ggsql-rest --load-sample-data
 
-# Start with database connections from a YAML config
-ggsql-rest --connections config.yaml
+# Load your own data files (CSV, Parquet, JSON)
+ggsql-rest --load-data sales.csv --load-data products.parquet
+
+# Combine sample data, custom files, and remote database connections
+ggsql-rest --load-sample-data --load-data extra.csv --connections config.yaml
 
 # Customize host, port, and CORS
-ggsql-rest --connections config.yaml --host 0.0.0.0 --port 9000 --cors-origins http://localhost:3000
+ggsql-rest --port 3334 --host 0.0.0.0 --cors-origins http://localhost:3000
 ```
 
 CLI options:
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--load-sample-data` | off | Load sample data (products, sales, employees) into all sessions |
+| `--load-data FILE` | — | Load a data file (CSV, Parquet, JSON) into all sessions. Repeatable. |
 | `--connections` | — | Path to YAML connection config file |
 | `--host` | `127.0.0.1` | Host to bind to |
 | `--port` | `8000` | Port to listen on |
 | `--cors-origins` | — | Space-separated list of allowed CORS origins |
+
+Data loaded via `--load-sample-data` and `--load-data` is seeded into every new session, so all users see the same base tables. Users can also upload additional files per-session via the upload endpoint.
 
 ### YAML connection configuration
 

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ._connections import ConnectionRegistry
 from ._sessions import SessionManager
 from ._errors import register_error_handlers
-from ._routes import _health, _sessions, _query
+from ._routes import _health, _sessions, _query, _schema
 
 
 def _make_lifespan(
@@ -62,6 +62,7 @@ def create_app(
     api_v1.include_router(_health.router)
     api_v1.include_router(_sessions.router)
     api_v1.include_router(_query.router)
+    api_v1.include_router(_schema.router)
 
     # Mount the versioned API
     app.include_router(api_v1)

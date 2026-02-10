@@ -31,7 +31,7 @@ def get_session(
 
 
 @router.post("")
-def create_session(
+async def create_session(
     session_mgr: SessionManager = Depends(get_session_manager),
 ) -> dict:
     """Create a new session."""
@@ -40,7 +40,7 @@ def create_session(
 
 
 @router.delete("/{session_id}")
-def delete_session(
+async def delete_session(
     session_id: str,
     session_mgr: SessionManager = Depends(get_session_manager),
 ) -> dict:

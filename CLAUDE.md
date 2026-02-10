@@ -49,6 +49,18 @@ src/ggsql_rest/
     _sessions.py       # Session CRUD + file upload
 ```
 
+## DuckDBReader threading constraint
+
+`ggsql.DuckDBReader` is a Rust PyO3 binding marked `!Send` — it **panics** if accessed from a different thread than where it was created.
+
+In FastAPI:
+- `async def` routes run on the **event loop thread**
+- `def` (sync) routes run in a **thread pool**
+
+**All route handlers that create or access `session.duckdb` MUST be `async def`** so they all run on the event loop thread. If any DuckDB-touching route is changed to sync `def`, it will run on a thread pool thread and trigger a Rust panic: `_ggsql::PyDuckDBReader is unsendable, but sent to another thread`.
+
+Currently affected routes: `create_session`, `delete_session`, `upload_file`, `query`, `sql`, `schema`.
+
 ## Key conventions
 
 - All routes prefixed with `/api/v1`

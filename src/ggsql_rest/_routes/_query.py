@@ -24,7 +24,7 @@ def get_registry() -> ConnectionRegistry:
 
 
 @router.post("/query")
-def query(
+async def query(
     request: Request,
     body: QueryRequest,
     session: Session = Depends(get_session),
@@ -46,7 +46,7 @@ def query(
 
 
 @router.post("/sql")
-def sql(
+async def sql(
     request: Request,
     body: SqlRequest,
     session: Session = Depends(get_session),

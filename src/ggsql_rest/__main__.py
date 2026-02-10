@@ -7,6 +7,7 @@ import uvicorn
 from ._app import create_app
 from ._config import load_connections_from_yaml
 from ._connections import ConnectionRegistry
+from ._sessions import load_seed_data
 
 
 def main() -> None:
@@ -14,6 +15,13 @@ def main() -> None:
     parser.add_argument(
         "--connections",
         help="Path to connections YAML config file",
+    )
+    parser.add_argument(
+        "--load-data",
+        action="append",
+        dest="load_data",
+        metavar="FILE",
+        help="Load a data file (CSV, Parquet, JSON) into all sessions. Can be repeated.",
     )
     parser.add_argument(
         "--port",
@@ -38,7 +46,12 @@ def main() -> None:
     else:
         registry = ConnectionRegistry()
 
-    app = create_app(registry, cors_origins=args.cors_origins)
+    seed_data = load_seed_data(args.load_data) if args.load_data else None
+    if seed_data:
+        tables = [name for name, _ in seed_data]
+        print(f"Loaded {len(seed_data)} data file(s): {', '.join(tables)}")
+
+    app = create_app(registry, cors_origins=args.cors_origins, seed_data=seed_data)
     uvicorn.run(app, host=args.host, port=args.port)
 
 

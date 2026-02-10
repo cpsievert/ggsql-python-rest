@@ -1,7 +1,9 @@
 """FastAPI application factory."""
 
+from __future__ import annotations
+
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING, AsyncGenerator
 
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +12,9 @@ from ._connections import ConnectionRegistry
 from ._sessions import SessionManager
 from ._errors import register_error_handlers
 from ._routes import _health, _sessions, _query, _schema
+
+if TYPE_CHECKING:
+    import polars as pl
 
 
 def _make_lifespan(
@@ -31,9 +36,10 @@ def create_app(
     registry: ConnectionRegistry,
     session_timeout_mins: int = 30,
     cors_origins: list[str] | None = None,
+    seed_data: list[tuple[str, pl.DataFrame]] | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
-    session_manager = SessionManager(session_timeout_mins)
+    session_manager = SessionManager(session_timeout_mins, seed_data=seed_data)
 
     app = FastAPI(
         title="ggsql REST API",

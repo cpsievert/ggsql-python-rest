@@ -2,6 +2,8 @@
 
 from datetime import timezone
 
+import polars as pl
+
 from ggsql_rest._sessions import Session, SessionManager
 
 
@@ -88,3 +90,65 @@ def test_create_triggers_cleanup():
 
     # Verify s1 is actually gone from internal dict (not just lazily expired on get)
     assert s1_id not in mgr._sessions
+
+
+def test_session_manager_with_seed_data():
+    """Sessions should be seeded with base tables when seed_data is provided."""
+    seed = [
+        ("products", pl.DataFrame({"id": [1, 2], "name": ["A", "B"]})),
+        ("sales", pl.DataFrame({"id": [1], "amount": [100.0]})),
+    ]
+    mgr = SessionManager(timeout_mins=30, seed_data=seed)
+    session = mgr.create()
+
+    # Tables should be registered
+    assert "products" in session.tables
+    assert "sales" in session.tables
+
+    # Data should be queryable
+    result = session.duckdb.execute_sql("SELECT count(*) AS n FROM products")
+    assert result["n"][0] == 2
+
+
+def test_session_manager_without_seed_data():
+    """Sessions without seed_data should start empty (backward compatible)."""
+    mgr = SessionManager(timeout_mins=30)
+    session = mgr.create()
+    assert session.tables == []
+
+
+def test_session_seed_data_isolated_between_sessions():
+    """Each session should get its own copy of seed data."""
+    seed = [("t", pl.DataFrame({"x": [1]}))]
+    mgr = SessionManager(timeout_mins=30, seed_data=seed)
+    s1 = mgr.create()
+    s2 = mgr.create()
+
+    # Both have the table
+    assert "t" in s1.tables
+    assert "t" in s2.tables
+
+    # They should be independent DuckDB instances
+    assert s1.duckdb is not s2.duckdb
+
+
+def test_load_seed_data_csv(tmp_path):
+    """load_seed_data should parse CSV files."""
+    from ggsql_rest._sessions import load_seed_data
+
+    csv_file = tmp_path / "sales.csv"
+    csv_file.write_text("id,amount\n1,100\n2,200\n")
+
+    result = load_seed_data([str(csv_file)])
+    assert len(result) == 1
+    assert result[0][0] == "sales"
+    assert len(result[0][1]) == 2
+
+
+def test_load_seed_data_missing_file():
+    """load_seed_data should raise for missing files."""
+    from ggsql_rest._sessions import load_seed_data
+    import pytest
+
+    with pytest.raises(FileNotFoundError):
+        load_seed_data(["/nonexistent/file.csv"])

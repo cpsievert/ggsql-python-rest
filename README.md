@@ -8,11 +8,13 @@ ggsql-rest provides an HTTP interface for executing ggsql queries. It implements
 
 ### Key features
 
-- **Session management**: Isolated DuckDB instances per user session
-- **File upload**: Upload CSV, Parquet, or JSON files to session databases
+- **Session management**: Isolated DuckDB instances per user session with automatic expiration
+- **File upload**: Upload CSV, Parquet, JSON, JSONL, or NDJSON files to session databases
 - **Hybrid execution**: SQL on remote databases, VISUALISE locally
-- **Connection registry**: Named database connections with request-aware factories
+- **Schema introspection**: Discover tables and columns across local and remote databases, with optional statistics
+- **Connection registry**: Named database connections with per-user caching and LRU eviction
 - **Pure SQL endpoint**: Execute SQL queries without visualization
+- **CLI**: Run the server from the command line with YAML-based connection configuration
 
 ## Installation
 
@@ -28,7 +30,54 @@ cd ggsql-python-rest
 uv sync
 ```
 
-## Usage
+## Quick start
+
+### CLI
+
+The simplest way to run the server is with the `ggsql-rest` CLI:
+
+```bash
+# Start with no connections (local DuckDB only)
+ggsql-rest
+
+# Start with database connections from a YAML config
+ggsql-rest --connections config.yaml
+
+# Customize host, port, and CORS
+ggsql-rest --connections config.yaml --host 0.0.0.0 --port 9000 --cors-origins http://localhost:3000
+```
+
+CLI options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--connections` | — | Path to YAML connection config file |
+| `--host` | `127.0.0.1` | Host to bind to |
+| `--port` | `8000` | Port to listen on |
+| `--cors-origins` | — | Space-separated list of allowed CORS origins |
+
+### YAML connection configuration
+
+The `--connections` flag accepts a YAML file defining named database connections:
+
+```yaml
+connections:
+  warehouse:
+    url: "postgresql://user:pass@host:5432/db"
+    pool_size: 5
+    pool_pre_ping: true
+    connect_args:
+      sslmode: require
+
+  local_sqlite:
+    url: "sqlite:///path/to/db.sqlite"
+```
+
+Each connection requires a `url` key. Any other keys are passed as keyword arguments to SQLAlchemy's `create_engine()`.
+
+### Python API
+
+For programmatic use:
 
 ```python
 from ggsql_rest import create_app, ConnectionRegistry
@@ -37,7 +86,7 @@ registry = ConnectionRegistry()
 app = create_app(registry)
 ```
 
-### With a remote database connection
+With a remote database connection:
 
 ```python
 from sqlalchemy import create_engine
@@ -49,13 +98,18 @@ registry.register("warehouse", lambda req: create_engine("postgresql://..."))
 app = create_app(registry, cors_origins=["http://localhost:3000"])
 ```
 
-### Running the server
+Or load connections from YAML in Python:
 
-```bash
-uv run uvicorn ggsql_rest:app --reload
+```python
+from ggsql_rest import create_app, load_connections_from_yaml
+
+registry = load_connections_from_yaml("config.yaml")
+app = create_app(registry)
 ```
 
 ## API endpoints
+
+All endpoints are served under the `/api/v1` prefix.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -64,8 +118,34 @@ uv run uvicorn ggsql_rest:app --reload
 | `DELETE` | `/sessions/{id}` | Delete a session |
 | `GET` | `/sessions/{id}/tables` | List tables in session |
 | `POST` | `/sessions/{id}/upload` | Upload a data file |
+| `GET` | `/sessions/{id}/schema` | Schema introspection (local + remote tables) |
 | `POST` | `/sessions/{id}/query` | Execute a ggsql query |
 | `POST` | `/sessions/{id}/sql` | Execute a pure SQL query |
+
+### Response format
+
+All responses use a standard envelope:
+
+```json
+{"status": "success", "data": { ... }}
+```
+
+```json
+{"status": "error", "error": {"type": "InvalidRequest", "message": "..."}}
+```
+
+Response fields use camelCase (e.g., `sessionId`, `tableName`, `rowCount`).
+
+### Schema introspection
+
+`GET /sessions/{id}/schema` returns column metadata for all available tables (both uploaded files and remote database tables). Pass `?include_stats=true` to include:
+
+- **Numeric columns**: `minValue`, `maxValue`
+- **Text columns** (up to 20 distinct values): `categoricalValues`
+
+### File upload
+
+`POST /sessions/{id}/upload` accepts multipart/form-data. Supported formats: `.csv`, `.parquet`, `.json`, `.jsonl`, `.ndjson`. The uploaded file is registered as a table in the session's DuckDB instance.
 
 ## Security
 
@@ -100,12 +180,9 @@ statements.** It is the deployer's responsibility to ensure that:
 ## Development
 
 ```bash
-# Run tests
-uv run pytest
-
-# Format code
-uv run ruff format
-
-# Lint
-uv run ruff check
+uv sync              # Install dependencies
+uv run pytest        # Run tests
+uv run pyright       # Type check
+uv run ruff format   # Format code
+uv run ruff check    # Lint
 ```

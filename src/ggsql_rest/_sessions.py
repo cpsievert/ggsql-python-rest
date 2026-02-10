@@ -110,3 +110,59 @@ def load_seed_data(paths: list[str]) -> list[tuple[str, pl.DataFrame]]:
 
         seed.append((name, df))
     return seed
+
+
+def make_sample_data() -> list[tuple[str, pl.DataFrame]]:
+    """Create the sample dataset (products, sales, employees).
+
+    Mirrors the Rust ggsql-rest --load-sample-data tables.
+    """
+    import polars as pl  # noqa: PLW0621
+
+    products = pl.DataFrame({
+        "product_id": [1, 2, 3, 4, 5, 6, 7],
+        "product_name": [
+            "Laptop", "Mouse", "Keyboard", "Monitor",
+            "Desk", "Chair", "Lamp",
+        ],
+        "category": [
+            "Electronics", "Electronics", "Electronics", "Electronics",
+            "Furniture", "Furniture", "Furniture",
+        ],
+        "price": [999.99, 29.99, 79.99, 349.99, 249.99, 199.99, 49.99],
+    })
+
+    # 36 sales rows: 12 months of sales for 3 regions (US, EU, APAC)
+    sale_rows: list[dict] = []
+    sale_id = 1
+    for month in range(1, 4):  # Jan-Mar
+        for product_id in [1, 2, 3, 4]:
+            for region in ["US", "EU", "APAC"]:
+                sale_rows.append({
+                    "sale_id": sale_id,
+                    "product_id": product_id,
+                    "quantity": (sale_id * 3) % 20 + 1,
+                    "sale_date": f"2024-{month:02d}-{(sale_id % 28) + 1:02d}",
+                    "region": region,
+                })
+                sale_id += 1
+    sales = pl.DataFrame(sale_rows)
+
+    employees = pl.DataFrame({
+        "employee_id": [1, 2, 3, 4, 5, 6],
+        "employee_name": [
+            "Alice Johnson", "Bob Smith", "Carol Williams",
+            "David Brown", "Eve Davis", "Frank Wilson",
+        ],
+        "department": [
+            "Engineering", "Engineering", "Sales",
+            "Sales", "Marketing", "Marketing",
+        ],
+        "salary": [95000, 88000, 72000, 68000, 78000, 71000],
+        "hire_date": [
+            "2020-03-15", "2021-07-01", "2019-11-20",
+            "2022-01-10", "2021-05-25", "2023-02-14",
+        ],
+    })
+
+    return [("products", products), ("sales", sales), ("employees", employees)]

@@ -152,3 +152,38 @@ def test_load_seed_data_missing_file():
 
     with pytest.raises(FileNotFoundError):
         load_seed_data(["/nonexistent/file.csv"])
+
+
+def test_make_sample_data():
+    """make_sample_data should return products, sales, and employees tables."""
+    from ggsql_rest._sessions import make_sample_data
+
+    seed = make_sample_data()
+    names = [name for name, _ in seed]
+    assert names == ["products", "sales", "employees"]
+
+    # Verify row counts match Rust server
+    by_name = {name: df for name, df in seed}
+    assert len(by_name["products"]) == 7
+    assert len(by_name["sales"]) == 36
+    assert len(by_name["employees"]) == 6
+
+    # Verify column structure
+    assert set(by_name["products"].columns) == {"product_id", "product_name", "category", "price"}
+    assert set(by_name["sales"].columns) == {"sale_id", "product_id", "quantity", "sale_date", "region"}
+    assert set(by_name["employees"].columns) == {"employee_id", "employee_name", "department", "salary", "hire_date"}
+
+
+def test_make_sample_data_queryable():
+    """Sample data should be queryable after seeding a session."""
+    from ggsql_rest._sessions import make_sample_data
+
+    seed = make_sample_data()
+    mgr = SessionManager(timeout_mins=30, seed_data=seed)
+    session = mgr.create()
+
+    result = session.duckdb.execute_sql(
+        "SELECT region, SUM(quantity) AS total FROM sales GROUP BY region ORDER BY region"
+    )
+    assert len(result) == 3  # US, EU, APAC
+    assert set(result["region"].to_list()) == {"US", "EU", "APAC"}

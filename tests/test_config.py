@@ -89,3 +89,5 @@ def test_cli_help():
     assert "--connections" in result.stdout
     assert "--port" in result.stdout
     assert "--host" in result.stdout
+    assert "--load-data" in result.stdout
+    assert "--load-sample-data" in result.stdout

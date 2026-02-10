@@ -21,6 +21,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # Required to build ggsql from source (git dep).
+      # Remove once ggsql is published to PyPI with pre-built wheels.
       - name: Install tree-sitter-cli
         run: npm install -g tree-sitter-cli
 

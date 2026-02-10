@@ -1,5 +1,7 @@
 """Tests for YAML connection config loading."""
 
+import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -74,3 +76,16 @@ def test_load_empty_connections(tmp_path: Path):
 
     registry = load_connections_from_yaml(config_file)
     assert registry.list_connections() == []
+
+
+def test_cli_help():
+    """CLI entry point should respond to --help."""
+    result = subprocess.run(
+        [sys.executable, "-m", "ggsql_rest", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "--connections" in result.stdout
+    assert "--port" in result.stdout
+    assert "--host" in result.stdout

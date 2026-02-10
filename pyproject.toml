@@ -16,6 +16,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "polars>=1.0",
     "python-multipart>=0.0.6",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.uv.sources]

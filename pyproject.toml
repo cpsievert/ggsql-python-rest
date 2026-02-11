@@ -22,9 +22,6 @@ dependencies = [
 [project.scripts]
 ggsql-rest = "ggsql_rest.__main__:main"
 
-[tool.uv.sources]
-ggsql = { git = "https://github.com/posit-dev/ggsql", branch = "main", subdirectory = "ggsql-python" }
-
 [tool.hatch.version]
 source = "vcs"
 

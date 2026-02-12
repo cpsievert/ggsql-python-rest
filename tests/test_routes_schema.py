@@ -1,6 +1,7 @@
 """Tests for schema route."""
 
 import io
+import json
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -294,3 +295,89 @@ async def test_schema_table_not_found():
 
         response = await client.get(f"/sessions/{session.id}/schema/table/nonexistent")
         assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_schema_tables_stream_local():
+    """Schema tables stream endpoint returns NDJSON with local table."""
+    app, session_mgr = create_test_app(ConnectionRegistry())
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        # Upload a CSV to create a local table
+        csv_content = b"x,y,label\n1,10,a\n2,20,b\n3,30,a"
+        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
+        await client.post(f"/sessions/{session.id}/upload", files=files)
+
+        # Request streaming table names
+        response = await client.get(f"/sessions/{session.id}/schema/tables?stream=true")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-ndjson"
+
+        # Parse NDJSON lines
+        lines = response.text.strip().split("\n")
+        assert len(lines) == 1
+
+        first_line = json.loads(lines[0])
+        assert "tables" in first_line
+        assert len(first_line["tables"]) == 1
+        assert first_line["tables"][0]["tableName"] == "_upload_data"
+        assert first_line["tables"][0]["connection"] is None
+
+
+@pytest.mark.anyio
+async def test_schema_tables_stream_with_remote():
+    """Schema tables stream endpoint includes remote tables in first line."""
+    # Create a SQLite in-memory engine with a table
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER, name TEXT)"))
+        conn.execute(text("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')"))
+
+    registry = ConnectionRegistry()
+    registry.register("test_db", lambda _req: engine)
+
+    app, session_mgr = create_test_app(registry)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        # Request streaming table names
+        response = await client.get(f"/sessions/{session.id}/schema/tables?stream=true")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-ndjson"
+
+        # Parse NDJSON lines
+        lines = response.text.strip().split("\n")
+        assert len(lines) == 1
+
+        first_line = json.loads(lines[0])
+        assert "tables" in first_line
+        remote_tables = [t for t in first_line["tables"] if t["connection"] == "test_db"]
+        assert len(remote_tables) == 1
+        assert remote_tables[0]["tableName"] == "users"
+
+
+@pytest.mark.anyio
+async def test_schema_tables_stream_empty():
+    """Schema tables stream endpoint returns empty response when no tables."""
+    app, session_mgr = create_test_app(ConnectionRegistry())
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        # Request streaming table names (no tables uploaded)
+        response = await client.get(f"/sessions/{session.id}/schema/tables?stream=true")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-ndjson"
+
+        # Empty session should have empty response body
+        assert response.text == ""

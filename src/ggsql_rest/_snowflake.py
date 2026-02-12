@@ -8,6 +8,7 @@ Supports two auth modes:
 
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,33 @@ except ImportError:
     PositAuthenticator = None  # type: ignore[assignment, misc]
 
 _SESSION_TOKEN_HEADER = "posit-connect-user-session-token"
+
+
+def _parse_snowflake_type(data_type_json: str) -> str:
+    """Parse Snowflake's JSON data_type string into a readable type name.
+
+    SHOW COLUMNS returns data_type as JSON, e.g.:
+      {"type":"FIXED","precision":38,"scale":0,"nullable":true}
+    """
+    try:
+        parsed = json.loads(data_type_json)
+    except (json.JSONDecodeError, TypeError):
+        return "VARCHAR"
+
+    sf_type = parsed.get("type", "VARCHAR")
+
+    if sf_type == "FIXED":
+        precision = parsed.get("precision", 38)
+        scale = parsed.get("scale", 0)
+        return f"NUMBER({precision},{scale})"
+    elif sf_type == "TEXT":
+        return "VARCHAR"
+    elif sf_type == "REAL":
+        return "FLOAT"
+    else:
+        # DATE, BOOLEAN, TIMESTAMP_NTZ, TIMESTAMP_LTZ, TIMESTAMP_TZ,
+        # TIME, BINARY, VARIANT, OBJECT, ARRAY — use as-is
+        return sf_type
 
 
 class SnowflakeDiscovery:

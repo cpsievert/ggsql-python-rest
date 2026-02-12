@@ -8,13 +8,20 @@ Supports two auth modes:
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import snowflake.connector as snowflake_connector
+from sqlalchemy import create_engine
+
+from ._schema import get_remote_table_schemas
 
 if TYPE_CHECKING:
     from fastapi import Request
     from snowflake.connector import SnowflakeConnection
+    from sqlalchemy import Engine
+
+    from ._models import TableSchema
 
 # Optional import — only available on Connect
 try:
@@ -43,6 +50,12 @@ class SnowflakeDiscovery:
         self.account = account
         self.warehouse = warehouse
         self.connection_name = connection_name
+
+        # Per-user caches: user_id -> discovered connections
+        self._discovered_connections: dict[str, dict[str, tuple[str, str]]] = {}
+        # Engine cache: (user_id, connection_name) -> Engine
+        self._engines: OrderedDict[tuple[str, str], Engine] = OrderedDict()
+        self._max_engines = 50
 
     def _create_connection(
         self,
@@ -132,3 +145,125 @@ class SnowflakeDiscovery:
                     results.append((conn_name, db_name, schema_name, table_name))
 
         return results
+
+    def _extract_user_id(self, request: Request) -> str:
+        """Extract user ID from request headers."""
+        return request.headers.get("x-user-id", "anonymous")
+
+    def _create_engine(
+        self,
+        request: Request,
+        database: str,
+        schema: str,
+    ) -> Engine:
+        """Create a SQLAlchemy engine using snowflake.connector for auth."""
+        def creator():
+            return self._create_connection(request, database=database, schema=schema)
+        return create_engine("snowflake://not@used/db", creator=creator)
+
+    def _get_cached_engine(
+        self,
+        user_id: str,
+        connection_name: str,
+        request: Request,
+        database: str,
+        schema: str,
+    ) -> Engine:
+        """Get or create a cached engine with LRU eviction."""
+        cache_key = (user_id, connection_name)
+
+        # Check if already cached
+        if cache_key in self._engines:
+            # Move to end (most recently used)
+            self._engines.move_to_end(cache_key)
+            return self._engines[cache_key]
+
+        # Create new engine
+        engine = self._create_engine(request, database, schema)
+        self._engines[cache_key] = engine
+
+        # Evict oldest if cache is full
+        if len(self._engines) > self._max_engines:
+            _, oldest_engine = self._engines.popitem(last=False)
+            oldest_engine.dispose()
+
+        return engine
+
+    def get_tables(
+        self,
+        request: Request,
+        include_stats: bool,
+    ) -> list[TableSchema]:
+        """Get table schemas for all connections the user has access to.
+
+        This is the main public API for the schema route.
+        """
+        user_id = self._extract_user_id(request)
+
+        # Discover catalog if not cached for this user
+        if user_id not in self._discovered_connections:
+            conn = self._create_connection(request)
+            catalog_data = self._discover_catalog(conn)
+            conn.close()
+
+            # Build connections dict: connection_name -> (database, schema)
+            connections: dict[str, tuple[str, str]] = {}
+            for conn_name, database, schema, _table_name in catalog_data:
+                if conn_name not in connections:
+                    connections[conn_name] = (database, schema)
+
+            self._discovered_connections[user_id] = connections
+
+        # Get schemas for all discovered connections
+        all_tables: list[TableSchema] = []
+        connections = self._discovered_connections[user_id]
+
+        for conn_name, (database, schema) in connections.items():
+            engine = self._get_cached_engine(user_id, conn_name, request, database, schema)
+            tables = get_remote_table_schemas(engine, conn_name, include_stats)
+            all_tables.extend(tables)
+
+        return all_tables
+
+    def get_engine(
+        self,
+        connection_name: str,
+        request: Request,
+    ) -> Engine:
+        """Get engine for a specific connection.
+
+        This is used by the query route.
+
+        Raises:
+            KeyError: If connection_name is not found for this user.
+        """
+        user_id = self._extract_user_id(request)
+
+        # Look up connection in user's discovered connections
+        if user_id not in self._discovered_connections:
+            raise KeyError(f"Connection '{connection_name}' not found")
+
+        connections = self._discovered_connections[user_id]
+        if connection_name not in connections:
+            raise KeyError(f"Connection '{connection_name}' not found")
+
+        database, schema = connections[connection_name]
+        return self._get_cached_engine(user_id, connection_name, request, database, schema)
+
+    def has_connection(
+        self,
+        connection_name: str,
+        request: Request,
+    ) -> bool:
+        """Check if a connection belongs to this discovery."""
+        user_id = self._extract_user_id(request)
+        if user_id not in self._discovered_connections:
+            return False
+        return connection_name in self._discovered_connections[user_id]
+
+    def dispose_all(self) -> None:
+        """Dispose all cached engines and clear caches."""
+        for engine in self._engines.values():
+            engine.dispose()
+        self._engines.clear()
+        self._discovered_connections.clear()

@@ -212,3 +212,132 @@ class TestCatalogDiscovery:
         result = discovery._discover_catalog(mock_conn)
 
         assert result == []
+
+
+class TestGetTables:
+    """Test get_tables() method for schema route."""
+
+    def test_get_tables_returns_table_schemas(self):
+        """get_tables() returns list of TableSchema objects."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+            connection_name="my_conn",
+        )
+        request = _make_request({"x-user-id": "user1"})
+
+        # Mock the chain: _create_connection -> _discover_catalog
+        mock_conn = MagicMock()
+        catalog_data = [
+            ("DB1.PUBLIC", "DB1", "PUBLIC", "USERS"),
+            ("DB1.PUBLIC", "DB1", "PUBLIC", "ORDERS"),
+        ]
+
+        # Mock TableSchema objects that get_remote_table_schemas would return
+        from ggsql_rest._models import ColumnSchema, TableSchema
+
+        mock_tables = [
+            TableSchema(
+                table_name="USERS",
+                connection="DB1.PUBLIC",
+                columns=[ColumnSchema(column_name="id", data_type="INTEGER")],
+            ),
+            TableSchema(
+                table_name="ORDERS",
+                connection="DB1.PUBLIC",
+                columns=[ColumnSchema(column_name="order_id", data_type="INTEGER")],
+            ),
+        ]
+
+        with (
+            patch.object(discovery, "_create_connection", return_value=mock_conn),
+            patch.object(discovery, "_discover_catalog", return_value=catalog_data),
+            patch.object(discovery, "_create_engine") as mock_create_engine,
+            patch("ggsql_rest._snowflake.get_remote_table_schemas", return_value=mock_tables),
+        ):
+            result = discovery.get_tables(request, include_stats=False)
+
+            # Verify _discover_catalog was called
+            discovery._discover_catalog.assert_called_once_with(mock_conn)
+            # Verify engine creation
+            mock_create_engine.assert_called_once()
+            # Verify result
+            assert len(result) == 2
+            assert result[0].table_name == "USERS"
+            assert result[1].table_name == "ORDERS"
+
+    def test_get_tables_caches_per_user(self):
+        """get_tables() caches discovered connections per user."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+            connection_name="my_conn",
+        )
+        request = _make_request({"x-user-id": "user1"})
+
+        mock_conn = MagicMock()
+        catalog_data = [("DB1.PUBLIC", "DB1", "PUBLIC", "USERS")]
+
+        from ggsql_rest._models import ColumnSchema, TableSchema
+
+        mock_tables = [
+            TableSchema(
+                table_name="USERS",
+                connection="DB1.PUBLIC",
+                columns=[ColumnSchema(column_name="id", data_type="INTEGER")],
+            )
+        ]
+
+        with (
+            patch.object(discovery, "_create_connection", return_value=mock_conn),
+            patch.object(discovery, "_discover_catalog", return_value=catalog_data) as mock_discover,
+            patch.object(discovery, "_create_engine"),
+            patch("ggsql_rest._snowflake.get_remote_table_schemas", return_value=mock_tables),
+        ):
+            # First call
+            discovery.get_tables(request, include_stats=False)
+            # Second call
+            discovery.get_tables(request, include_stats=False)
+
+            # _discover_catalog should only be called once
+            assert mock_discover.call_count == 1
+
+
+class TestGetEngine:
+    """Test get_engine() method for query route."""
+
+    def test_get_engine_returns_engine_for_known_connection(self):
+        """get_engine() returns engine for a known connection."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+            connection_name="my_conn",
+        )
+        request = _make_request({"x-user-id": "user1"})
+
+        # Pre-populate discovered connections cache
+        discovery._discovered_connections["user1"] = {
+            "DB1.PUBLIC": ("DB1", "PUBLIC"),
+        }
+
+        mock_engine = MagicMock()
+        with patch.object(discovery, "_create_engine", return_value=mock_engine):
+            engine = discovery.get_engine("DB1.PUBLIC", request)
+
+            assert engine is mock_engine
+            discovery._create_engine.assert_called_once()
+
+    def test_get_engine_unknown_connection_raises(self):
+        """get_engine() raises KeyError for unknown connection."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+            connection_name="my_conn",
+        )
+        request = _make_request({"x-user-id": "user1"})
+
+        # Pre-populate with empty discovered connections
+        discovery._discovered_connections["user1"] = {}
+
+        with pytest.raises(KeyError, match="DB1.PUBLIC"):
+            discovery.get_engine("DB1.PUBLIC", request)

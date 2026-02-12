@@ -9,6 +9,23 @@ from sqlalchemy import create_engine
 from ._connections import ConnectionRegistry
 
 
+def _provider_from_url(url: str) -> str | None:
+    """Extract database provider name from a SQLAlchemy URL scheme.
+
+    Args:
+        url: SQLAlchemy URL (e.g., "postgresql+psycopg2://...", "mysql://...")
+
+    Returns:
+        Provider name (e.g., "postgresql", "mysql", "sqlite") or None if not parseable
+    """
+    # SQLAlchemy URLs: "dialect+driver://..." or "dialect://..."
+    scheme = url.split("://")[0] if "://" in url else None
+    if scheme is None:
+        return None
+    dialect = scheme.split("+")[0]  # e.g. "postgresql+psycopg2" -> "postgresql"
+    return dialect or None
+
+
 def load_connections_from_yaml(path: str | Path) -> ConnectionRegistry:
     """Load a ConnectionRegistry from a YAML config file.
 
@@ -41,6 +58,7 @@ def load_connections_from_yaml(path: str | Path) -> ConnectionRegistry:
                 return create_engine(u, **k)
             return factory
 
-        registry.register(name, make_factory(url, kwargs))
+        provider = _provider_from_url(url)
+        registry.register(name, make_factory(url, kwargs), provider=provider)
 
     return registry

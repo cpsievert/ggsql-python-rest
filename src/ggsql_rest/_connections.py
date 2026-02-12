@@ -12,12 +12,21 @@ class ConnectionRegistry:
 
     def __init__(self, max_engines: int = 100):
         self._factories: dict[str, Callable[[Request], Engine]] = {}
+        self._providers: dict[str, str] = {}
         self._engines: OrderedDict[tuple[str, str], Engine] = OrderedDict()
         self._max_engines = max_engines
 
-    def register(self, name: str, factory: Callable[[Request], Engine]) -> None:
-        """Register a named connection factory."""
+    def register(self, name: str, factory: Callable[[Request], Engine], provider: str | None = None) -> None:
+        """Register a named connection factory.
+
+        Args:
+            name: Connection name
+            factory: Factory function to create an engine
+            provider: Optional provider type (e.g., "postgresql", "mysql", "sqlite")
+        """
         self._factories[name] = factory
+        if provider is not None:
+            self._providers[name] = provider
 
     def get_engine(self, name: str, request: Request) -> Engine:
         """Get or create a cached engine by name and user."""
@@ -51,6 +60,10 @@ class ConnectionRegistry:
     def has_connection(self, name: str) -> bool:
         """Check if a connection name is registered."""
         return name in self._factories
+
+    def get_provider(self, name: str) -> str | None:
+        """Get the provider type for a connection, or None if unknown."""
+        return self._providers.get(name)
 
     def dispose_all(self) -> None:
         """Dispose all cached engines. Called on shutdown."""

@@ -91,3 +91,35 @@ def test_cli_help():
     assert "--host" in result.stdout
     assert "--load-data" in result.stdout
     assert "--load-sample-data" in result.stdout
+
+
+def test_load_connections_derives_provider_from_url(tmp_path: Path):
+    """Provider is derived from SQLAlchemy URL scheme."""
+    config_file = tmp_path / "connections.yaml"
+    config_file.write_text(textwrap.dedent("""\
+        connections:
+          pg_db:
+            url: "postgresql+psycopg2://user:pass@localhost/db"
+          mysql_db:
+            url: "mysql://user:pass@localhost/db"
+          sqlite_db:
+            url: "sqlite:///path/to/db.sqlite"
+    """))
+
+    registry = load_connections_from_yaml(config_file)
+    assert registry.get_provider("pg_db") == "postgresql"
+    assert registry.get_provider("mysql_db") == "mysql"
+    assert registry.get_provider("sqlite_db") == "sqlite"
+
+
+def test_load_connections_handles_url_without_scheme(tmp_path: Path):
+    """Malformed URLs without scheme don't crash."""
+    config_file = tmp_path / "connections.yaml"
+    config_file.write_text(textwrap.dedent("""\
+        connections:
+          weird_db:
+            url: "not-a-real-url"
+    """))
+
+    registry = load_connections_from_yaml(config_file)
+    assert registry.get_provider("weird_db") is None

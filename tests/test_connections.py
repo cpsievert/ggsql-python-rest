@@ -102,3 +102,35 @@ def test_engine_cache_evicts_lru():
     assert len(registry._engines) == 2
     assert ("db", "u1") not in registry._engines
     assert ("db", "u3") in registry._engines
+
+
+def test_get_provider_returns_registered_provider():
+    """get_provider returns the provider string when registered."""
+    registry = ConnectionRegistry()
+    registry.register("my_pg", lambda req: create_engine("sqlite:///:memory:"), provider="postgresql")
+    assert registry.get_provider("my_pg") == "postgresql"
+
+
+def test_get_provider_returns_none_for_unknown():
+    """get_provider returns None for unknown connection names."""
+    registry = ConnectionRegistry()
+    assert registry.get_provider("nonexistent") is None
+
+
+def test_get_provider_returns_none_when_no_provider_set():
+    """get_provider returns None when connection has no provider."""
+    registry = ConnectionRegistry()
+    registry.register("legacy", lambda req: create_engine("sqlite:///:memory:"))
+    assert registry.get_provider("legacy") is None
+
+
+def test_register_with_multiple_providers():
+    """Multiple connections can have different providers."""
+    registry = ConnectionRegistry()
+    registry.register("pg_conn", lambda req: create_engine("sqlite:///:memory:"), provider="postgresql")
+    registry.register("mysql_conn", lambda req: create_engine("sqlite:///:memory:"), provider="mysql")
+    registry.register("no_provider", lambda req: create_engine("sqlite:///:memory:"))
+
+    assert registry.get_provider("pg_conn") == "postgresql"
+    assert registry.get_provider("mysql_conn") == "mysql"
+    assert registry.get_provider("no_provider") is None

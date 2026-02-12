@@ -1,6 +1,7 @@
 """CLI entry point for ggsql-rest server."""
 
 import argparse
+import os
 
 import uvicorn
 
@@ -60,7 +61,29 @@ def main() -> None:
         print(f"Loaded {len(seed_data)} table(s): {', '.join(tables)}")
     seed_data = seed_data or None
 
-    app = create_app(registry, cors_origins=args.cors_origins, seed_data=seed_data)
+    # Snowflake discovery via environment variables
+    snowflake = None
+    snowflake_account = os.environ.get("SNOWFLAKE_ACCOUNT")
+    snowflake_warehouse = os.environ.get("SNOWFLAKE_WAREHOUSE")
+
+    if snowflake_account and snowflake_warehouse:
+        from ._snowflake import SnowflakeDiscovery
+
+        snowflake = SnowflakeDiscovery(
+            account=snowflake_account,
+            warehouse=snowflake_warehouse,
+            connection_name=os.environ.get("SNOWFLAKE_CONNECTION_NAME"),
+        )
+        print(f"Snowflake discovery enabled (account: {snowflake_account})")
+    elif snowflake_account or snowflake_warehouse:
+        print(
+            "Warning: Both SNOWFLAKE_ACCOUNT and SNOWFLAKE_WAREHOUSE must be set "
+            "to enable Snowflake discovery."
+        )
+
+    app = create_app(
+        registry, cors_origins=args.cors_origins, seed_data=seed_data, snowflake=snowflake
+    )
     uvicorn.run(app, host=args.host, port=args.port)
 
 

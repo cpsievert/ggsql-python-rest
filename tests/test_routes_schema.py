@@ -381,3 +381,97 @@ async def test_schema_tables_stream_empty():
 
         # Empty session should have empty response body
         assert response.text == ""
+
+
+@pytest.mark.anyio
+async def test_schema_tables_includes_provider():
+    """Schema tables endpoint includes provider field for remote connections."""
+    # Create a SQLite in-memory engine with a table
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER, name TEXT)"))
+        conn.execute(text("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')"))
+
+    registry = ConnectionRegistry()
+    # Register with explicit provider
+    registry.register("test_db", lambda _req: engine, provider="sqlite")
+
+    app, session_mgr = create_test_app(registry)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        # Upload a local table
+        csv_content = b"x,y,label\n1,10,a\n2,20,b\n3,30,a"
+        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
+        await client.post(f"/sessions/{session.id}/upload", files=files)
+
+        # Request table names
+        response = await client.get(f"/sessions/{session.id}/schema/tables")
+
+        assert response.status_code == 200
+        tables = response.json()["data"]["tables"]
+
+        # Local table should have provider=None
+        local_tables = [t for t in tables if t["connection"] is None]
+        assert len(local_tables) == 1
+        assert local_tables[0]["provider"] is None
+
+        # Remote table should have provider="sqlite"
+        remote_tables = [t for t in tables if t["connection"] == "test_db"]
+        assert len(remote_tables) == 1
+        assert remote_tables[0]["provider"] == "sqlite"
+
+
+@pytest.mark.anyio
+async def test_schema_tables_stream_includes_provider():
+    """Schema tables stream endpoint includes provider field for remote connections."""
+    # Create a SQLite in-memory engine with a table
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER, name TEXT)"))
+
+    registry = ConnectionRegistry()
+    # Register with explicit provider
+    registry.register("test_db", lambda _req: engine, provider="sqlite")
+
+    app, session_mgr = create_test_app(registry)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        # Upload a local table
+        csv_content = b"x,y,label\n1,10,a\n2,20,b"
+        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
+        await client.post(f"/sessions/{session.id}/upload", files=files)
+
+        # Request streaming table names
+        response = await client.get(f"/sessions/{session.id}/schema/tables?stream=true")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-ndjson"
+
+        # Parse NDJSON lines
+        lines = response.text.strip().split("\n")
+        assert len(lines) == 1
+
+        first_line = json.loads(lines[0])
+        tables = first_line["tables"]
+
+        # Local table should have provider=None
+        local_tables = [t for t in tables if t["connection"] is None]
+        assert len(local_tables) == 1
+        assert local_tables[0]["provider"] is None
+
+        # Remote table should have provider="sqlite"
+        remote_tables = [t for t in tables if t["connection"] == "test_db"]
+        assert len(remote_tables) == 1
+        assert remote_tables[0]["provider"] == "sqlite"

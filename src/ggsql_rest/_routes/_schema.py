@@ -37,8 +37,9 @@ async def schema_tables(
     for conn_name in registry.list_connections():
         engine = registry.get_engine(conn_name, request)
         remote_table_names = get_remote_table_names(engine)
+        provider = registry.get_provider(conn_name)
         for table_name in remote_table_names:
-            local_tables.append(TableNameEntry(table_name=table_name, connection=conn_name))
+            local_tables.append(TableNameEntry(table_name=table_name, connection=conn_name, provider=provider))
 
     if not stream:
         # Original non-streaming path
@@ -46,7 +47,7 @@ async def schema_tables(
         if snowflake is not None and not skip_snowflake:
             snowflake_table_names = snowflake.get_table_names(request)
             for table_name, connection_name in snowflake_table_names:
-                tables.append(TableNameEntry(table_name=table_name, connection=connection_name))
+                tables.append(TableNameEntry(table_name=table_name, connection=connection_name, provider="snowflake"))
         return success_envelope(TableNamesResponse(tables=tables))
 
     # Streaming path: NDJSON
@@ -60,7 +61,7 @@ async def schema_tables(
         if snowflake is not None and not skip_snowflake:
             for _db_name, batch in snowflake.stream_table_names(request):
                 entries = [
-                    TableNameEntry(table_name=tn, connection=cn)
+                    TableNameEntry(table_name=tn, connection=cn, provider="snowflake")
                     for tn, cn in batch
                 ]
                 line = {"tables": [e.model_dump(by_alias=True) for e in entries]}

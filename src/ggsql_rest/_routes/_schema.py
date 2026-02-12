@@ -17,6 +17,7 @@ router = APIRouter(prefix="/sessions/{session_id}", tags=["schema"])
 async def schema(
     request: Request,
     include_stats: bool = False,
+    skip_snowflake: bool = False,
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
@@ -37,8 +38,8 @@ async def schema(
         remote_tables = get_remote_table_schemas(engine, conn_name, include_stats)
         tables.extend(remote_tables)
 
-    # Snowflake tables (if configured)
-    if snowflake is not None:
+    # Snowflake tables (if configured and not skipped)
+    if snowflake is not None and not skip_snowflake:
         snowflake_tables = snowflake.get_tables(request, include_stats)
         tables.extend(snowflake_tables)
 

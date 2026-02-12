@@ -116,6 +116,7 @@ class TableNameEntry(CamelModel):
 
     table_name: str
     connection: str | None = None
+    provider: str | None = None
 
 
 class TableNamesResponse(CamelModel):

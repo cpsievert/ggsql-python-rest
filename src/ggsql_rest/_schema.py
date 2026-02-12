@@ -81,6 +81,12 @@ def _get_duckdb_column_stats(
     return stats
 
 
+def get_remote_table_names(engine: Engine) -> list[str]:
+    """Get table names from a remote database (no column introspection)."""
+    inspector = sa_inspect(engine)
+    return inspector.get_table_names()
+
+
 def get_remote_table_schemas(
     engine: Engine,
     connection_name: str,

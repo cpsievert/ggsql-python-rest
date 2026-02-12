@@ -95,7 +95,7 @@ async def test_schema_with_remote_connection():
         conn.execute(text("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')"))
 
     registry = ConnectionRegistry()
-    registry.register("test_db", lambda req: engine)
+    registry.register("test_db", lambda _req: engine)
 
     app, session_mgr = create_test_app(registry)
     transport = ASGITransport(app=app)
@@ -134,3 +134,65 @@ async def test_schema_session_not_found():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/sessions/nonexistent/schema")
         assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_schema_tables_local():
+    """Schema tables endpoint returns just table names without columns."""
+    app, session_mgr = create_test_app(ConnectionRegistry())
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        # Upload a CSV to create a local table
+        csv_content = b"x,y,label\n1,10,a\n2,20,b\n3,30,a"
+        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
+        await client.post(f"/sessions/{session.id}/upload", files=files)
+
+        # Request table names
+        response = await client.get(f"/sessions/{session.id}/schema/tables")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "success"
+        tables = body["data"]["tables"]
+        assert len(tables) == 1
+        assert tables[0]["tableName"] == "_upload_data"
+        assert tables[0]["connection"] is None
+        # Verify no columns are included
+        assert "columns" not in tables[0]
+
+
+@pytest.mark.anyio
+async def test_schema_tables_with_remote():
+    """Schema tables endpoint includes remote connection tables."""
+    # Create a SQLite in-memory engine with a table
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER, name TEXT)"))
+        conn.execute(text("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')"))
+
+    registry = ConnectionRegistry()
+    registry.register("test_db", lambda _req: engine)
+
+    app, session_mgr = create_test_app(registry)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        # Request table names
+        response = await client.get(f"/sessions/{session.id}/schema/tables")
+
+        assert response.status_code == 200
+        tables = response.json()["data"]["tables"]
+
+        # Find the remote table
+        remote_tables = [t for t in tables if t["connection"] == "test_db"]
+        assert len(remote_tables) == 1
+        assert remote_tables[0]["tableName"] == "users"
+        # Verify no columns are included
+        assert "columns" not in remote_tables[0]

@@ -111,6 +111,19 @@ class SchemaResponse(CamelModel):
     tables: list[TableSchema]
 
 
+class TableNameEntry(CamelModel):
+    """Entry in the table names listing (no column info)."""
+
+    table_name: str
+    connection: str | None = None
+
+
+class TableNamesResponse(CamelModel):
+    """Response for table names endpoint."""
+
+    tables: list[TableNameEntry]
+
+
 # === Errors ===
 
 

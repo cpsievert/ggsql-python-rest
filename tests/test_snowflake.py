@@ -385,3 +385,121 @@ class TestParseSnowflakeType:
     def test_missing_type_key(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
         assert _parse_snowflake_type('{"nullable":true}') == "VARCHAR"
+
+
+class TestGetTableNames:
+    """Test get_table_names() method for fast table name discovery."""
+
+    def test_returns_table_names_and_connections(self):
+        """get_table_names() returns list of (table_name, connection_name) tuples."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+            connection_name="my_conn",
+        )
+        request = _make_request({"x-user-id": "user1"})
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        call_count = {"fetchall": 0}
+
+        def fetchall_side_effect():
+            call_count["fetchall"] += 1
+            if call_count["fetchall"] == 1:
+                # SHOW DATABASES
+                return [("created_on", "DB1", "owner", "comment", "options", "retention_time")]
+            elif call_count["fetchall"] == 2:
+                # SHOW SCHEMAS IN DATABASE "DB1"
+                return [("created_on", "PUBLIC", "database", "owner", "comment", "options")]
+            elif call_count["fetchall"] == 3:
+                # SHOW TABLES IN SCHEMA "DB1"."PUBLIC"
+                return [
+                    ("created_on", "USERS", "database", "schema", "kind", "comment"),
+                    ("created_on", "ORDERS", "database", "schema", "kind", "comment"),
+                ]
+            raise ValueError(f"Unexpected fetchall call #{call_count['fetchall']}")
+
+        mock_cursor.fetchall.side_effect = fetchall_side_effect
+
+        with patch.object(discovery, "_create_connection", return_value=mock_conn):
+            result = discovery.get_table_names(request)
+
+        # Should close the connection
+        mock_conn.close.assert_called_once()
+
+        # Should return (table_name, connection_name) tuples
+        assert len(result) == 2
+        assert ("USERS", "DB1.PUBLIC") in result
+        assert ("ORDERS", "DB1.PUBLIC") in result
+
+        # Should populate _discovered_connections cache
+        assert "user1" in discovery._discovered_connections
+        assert discovery._discovered_connections["user1"] == {"DB1.PUBLIC": ("DB1", "PUBLIC")}
+
+    def test_caches_results(self):
+        """Second call to get_table_names() uses cache without re-querying."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+            connection_name="my_conn",
+        )
+        request = _make_request({"x-user-id": "user1"})
+
+        # Pre-populate the catalog cache
+        discovery._discovered_catalog["user1"] = [
+            ("DB1.PUBLIC", "DB1", "PUBLIC", "USERS"),
+            ("DB1.PUBLIC", "DB1", "PUBLIC", "ORDERS"),
+        ]
+        discovery._discovered_connections["user1"] = {"DB1.PUBLIC": ("DB1", "PUBLIC")}
+
+        with patch.object(discovery, "_create_connection") as mock_create:
+            result = discovery.get_table_names(request)
+
+        # Should not create a new connection
+        mock_create.assert_not_called()
+
+        # Should return cached data
+        assert len(result) == 2
+        assert ("USERS", "DB1.PUBLIC") in result
+        assert ("ORDERS", "DB1.PUBLIC") in result
+
+    def test_uses_databases_filter(self):
+        """get_table_names() respects databases filter and skips SHOW DATABASES."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+            connection_name="my_conn",
+            databases=["MYDB"],
+        )
+        request = _make_request({"x-user-id": "user1"})
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        call_count = {"fetchall": 0}
+
+        def fetchall_side_effect():
+            call_count["fetchall"] += 1
+            if call_count["fetchall"] == 1:
+                # SHOW SCHEMAS IN DATABASE "MYDB" (no SHOW DATABASES call)
+                return [("created_on", "PUBLIC", "database", "owner", "comment", "options")]
+            elif call_count["fetchall"] == 2:
+                # SHOW TABLES IN SCHEMA "MYDB"."PUBLIC"
+                return [("created_on", "CUSTOMERS", "database", "schema", "kind", "comment")]
+            raise ValueError(f"Unexpected fetchall call #{call_count['fetchall']}")
+
+        mock_cursor.fetchall.side_effect = fetchall_side_effect
+
+        with patch.object(discovery, "_create_connection", return_value=mock_conn):
+            result = discovery.get_table_names(request)
+
+        # Should not have called SHOW DATABASES
+        execute_calls = [str(call) for call in mock_cursor.execute.call_args_list]
+        assert not any("SHOW DATABASES" in str(call) for call in execute_calls)
+
+        # Should return result using specified database
+        assert len(result) == 1
+        assert ("CUSTOMERS", "MYDB.PUBLIC") in result

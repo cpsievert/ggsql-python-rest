@@ -84,6 +84,8 @@ class SnowflakeDiscovery:
         self._discovered_connections: dict[str, dict[str, tuple[str, str]]] = {}
         # Per-user caches: user_id -> discovered tables
         self._discovered_tables: dict[str, list[TableSchema]] = {}
+        # Per-user catalog cache: user_id -> list of (conn_name, db, schema, table_name)
+        self._discovered_catalog: dict[str, list[tuple[str, str, str, str]]] = {}
         # Engine cache: (user_id, connection_name) -> Engine
         self._engines: OrderedDict[tuple[str, str], Engine] = OrderedDict()
         self._max_engines = 50
@@ -263,6 +265,48 @@ class SnowflakeDiscovery:
 
         return engine
 
+    def get_table_names(
+        self,
+        request: Request,
+    ) -> list[tuple[str, str]]:
+        """Get table names and connection names for all accessible tables.
+
+        This is a fast path that skips column introspection. Used for the
+        listTables LLM tool.
+
+        Returns:
+            List of (table_name, connection_name) tuples.
+        """
+        user_id = self._extract_user_id(request)
+
+        # Return cached catalog if already discovered for this user
+        if user_id in self._discovered_catalog:
+            catalog_data = self._discovered_catalog[user_id]
+        else:
+            # Open a connection and discover catalog
+            conn = self._create_connection(request)
+            try:
+                catalog_data = self._discover_catalog(conn)
+            finally:
+                conn.close()
+
+            # Cache the catalog data
+            self._discovered_catalog[user_id] = catalog_data
+
+            # Also populate connections cache from catalog data
+            connections: dict[str, tuple[str, str]] = {}
+            for conn_name, database, schema, _table_name in catalog_data:
+                if conn_name not in connections:
+                    connections[conn_name] = (database, schema)
+            self._discovered_connections[user_id] = connections
+
+        # Build result list of (table_name, connection_name) tuples
+        result: list[tuple[str, str]] = []
+        for conn_name, _database, _schema, table_name in catalog_data:
+            result.append((table_name, conn_name))
+
+        return result
+
     def get_tables(
         self,
         request: Request,
@@ -369,3 +413,4 @@ class SnowflakeDiscovery:
         self._engines.clear()
         self._discovered_connections.clear()
         self._discovered_tables.clear()
+        self._discovered_catalog.clear()

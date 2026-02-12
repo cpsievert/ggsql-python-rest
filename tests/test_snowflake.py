@@ -88,3 +88,127 @@ class TestSnowflakeConnection:
 
         with pytest.raises(ValueError, match="Snowflake authentication"):
             discovery._create_connection(request)
+
+
+class TestCatalogDiscovery:
+    """Test Snowflake catalog discovery via SHOW commands."""
+
+    def test_discovers_databases_schemas_tables(self):
+        """Discovers databases, schemas, and tables via SHOW commands."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+        )
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        # Mock fetchall to return different results for each query
+        mock_cursor.fetchall.side_effect = [
+            # SHOW DATABASES
+            [("created_on", "DB1", "owner", "comment", "options", "retention_time")],
+            # SHOW SCHEMAS IN DATABASE "DB1"
+            [
+                ("created_on", "PUBLIC", "database", "owner", "comment", "options"),
+                ("created_on", "INFORMATION_SCHEMA", "database", "owner", "comment", "options"),
+            ],
+            # SHOW TABLES IN SCHEMA "DB1"."PUBLIC"
+            [
+                ("created_on", "USERS", "database", "schema", "kind", "comment"),
+                ("created_on", "ORDERS", "database", "schema", "kind", "comment"),
+            ],
+        ]
+
+        result = discovery._discover_catalog(mock_conn)
+
+        # Verify result structure
+        assert len(result) == 2
+        assert result[0] == ("DB1.PUBLIC", "DB1", "PUBLIC", "USERS")
+        assert result[1] == ("DB1.PUBLIC", "DB1", "PUBLIC", "ORDERS")
+
+    def test_skips_information_schema(self):
+        """INFORMATION_SCHEMA schemas are excluded from results."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+        )
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        # Mock fetchall to return different results for each query
+        mock_cursor.fetchall.side_effect = [
+            # SHOW DATABASES
+            [("created_on", "DB1", "owner", "comment", "options", "retention_time")],
+            # SHOW SCHEMAS returns only INFORMATION_SCHEMA
+            [("created_on", "INFORMATION_SCHEMA", "database", "owner", "comment", "options")],
+        ]
+
+        result = discovery._discover_catalog(mock_conn)
+
+        # Should be empty - INFORMATION_SCHEMA filtered out
+        assert result == []
+
+    def test_skips_inaccessible_databases(self):
+        """Inaccessible databases are skipped silently."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+        )
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        # Track which call we're on
+        call_count = {"execute": 0, "fetchall": 0}
+
+        def execute_side_effect(query):
+            call_count["execute"] += 1
+            if 'SHOW SCHEMAS IN DATABASE "DB2"' in query:
+                raise Exception("Access denied to DB2")
+
+        def fetchall_side_effect():
+            call_count["fetchall"] += 1
+            if call_count["fetchall"] == 1:
+                # SHOW DATABASES
+                return [
+                    ("created_on", "DB1", "owner", "comment", "options", "retention_time"),
+                    ("created_on", "DB2", "owner", "comment", "options", "retention_time"),
+                ]
+            elif call_count["fetchall"] == 2:
+                # SHOW SCHEMAS IN DATABASE "DB1"
+                return [("created_on", "PUBLIC", "database", "owner", "comment", "options")]
+            elif call_count["fetchall"] == 3:
+                # SHOW TABLES IN SCHEMA "DB1"."PUBLIC"
+                return [("created_on", "USERS", "database", "schema", "kind", "comment")]
+            raise ValueError(f"Unexpected fetchall call #{call_count['fetchall']}")
+
+        mock_cursor.execute.side_effect = execute_side_effect
+        mock_cursor.fetchall.side_effect = fetchall_side_effect
+
+        result = discovery._discover_catalog(mock_conn)
+
+        # Should only have DB1 results, DB2 skipped
+        assert len(result) == 1
+        assert result[0] == ("DB1.PUBLIC", "DB1", "PUBLIC", "USERS")
+
+    def test_empty_account_returns_empty(self):
+        """Empty account with no databases returns empty list."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+        )
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        # SHOW DATABASES returns empty
+        mock_cursor.fetchall.return_value = []
+
+        result = discovery._discover_catalog(mock_conn)
+
+        assert result == []

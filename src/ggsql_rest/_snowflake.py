@@ -88,3 +88,47 @@ class SnowflakeDiscovery:
             )
 
         return snowflake_connector.connect(**kwargs)
+
+    def _discover_catalog(
+        self,
+        conn: SnowflakeConnection,
+    ) -> list[tuple[str, str, str, str]]:
+        """Discover all accessible databases, schemas, and tables.
+
+        Returns list of (connection_name, database, schema, table_name) tuples.
+        Skips INFORMATION_SCHEMA and databases that error on access.
+        """
+        results: list[tuple[str, str, str, str]] = []
+        cursor = conn.cursor()
+
+        cursor.execute("SHOW DATABASES")
+        databases = cursor.fetchall()
+
+        for db_row in databases:
+            db_name = db_row[1]  # name is at index 1 in SHOW DATABASES output
+
+            try:
+                cursor.execute(f'SHOW SCHEMAS IN DATABASE "{db_name}"')
+                schemas = cursor.fetchall()
+            except Exception:
+                continue  # Skip inaccessible databases
+
+            for schema_row in schemas:
+                schema_name = schema_row[1]
+
+                if schema_name == "INFORMATION_SCHEMA":
+                    continue
+
+                conn_name = f"{db_name}.{schema_name}"
+
+                try:
+                    cursor.execute(f'SHOW TABLES IN SCHEMA "{db_name}"."{schema_name}"')
+                    tables = cursor.fetchall()
+                except Exception:
+                    continue  # Skip inaccessible schemas
+
+                for table_row in tables:
+                    table_name = table_row[1]
+                    results.append((conn_name, db_name, schema_name, table_name))
+
+        return results

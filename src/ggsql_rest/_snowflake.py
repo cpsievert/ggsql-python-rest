@@ -197,6 +197,11 @@ class SnowflakeDiscovery:
         """Get table schemas for all connections the user has access to.
 
         This is the main public API for the schema route.
+
+        Note: include_stats is accepted for interface compatibility but always
+        forced to False for Snowflake. Column stats queries (MIN/MAX/DISTINCT)
+        are too expensive on large Snowflake tables and hit case-sensitivity
+        issues with the snowflake-sqlalchemy dialect's lowercased identifiers.
         """
         user_id = self._extract_user_id(request)
 
@@ -215,12 +220,13 @@ class SnowflakeDiscovery:
             self._discovered_connections[user_id] = connections
 
         # Get schemas for all discovered connections
+        # Always skip stats for Snowflake — too expensive and quoting issues.
         all_tables: list[TableSchema] = []
         connections = self._discovered_connections[user_id]
 
         for conn_name, (database, schema) in connections.items():
             engine = self._get_cached_engine(user_id, conn_name, request, database, schema)
-            tables = get_remote_table_schemas(engine, conn_name, include_stats)
+            tables = get_remote_table_schemas(engine, conn_name, include_stats=False)
             all_tables.extend(tables)
 
         return all_tables

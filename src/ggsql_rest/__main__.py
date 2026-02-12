@@ -69,12 +69,20 @@ def main() -> None:
     if snowflake_account and snowflake_warehouse:
         from ._snowflake import SnowflakeDiscovery
 
+        snowflake_databases_str = os.environ.get("SNOWFLAKE_DATABASES")
+        snowflake_databases = (
+            [db.strip() for db in snowflake_databases_str.split(",") if db.strip()]
+            if snowflake_databases_str
+            else None
+        )
         snowflake = SnowflakeDiscovery(
             account=snowflake_account,
             warehouse=snowflake_warehouse,
             connection_name=os.environ.get("SNOWFLAKE_CONNECTION_NAME"),
+            databases=snowflake_databases,
         )
-        print(f"Snowflake discovery enabled (account: {snowflake_account})")
+        db_msg = f", databases: {','.join(snowflake_databases)}" if snowflake_databases else ""
+        print(f"Snowflake discovery enabled (account: {snowflake_account}{db_msg})")
     elif snowflake_account or snowflake_warehouse:
         print(
             "Warning: Both SNOWFLAKE_ACCOUNT and SNOWFLAKE_WAREHOUSE must be set "

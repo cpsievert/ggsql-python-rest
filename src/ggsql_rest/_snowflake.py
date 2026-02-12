@@ -65,6 +65,7 @@ class SnowflakeDiscovery:
         account: Snowflake account identifier.
         warehouse: Default warehouse for queries.
         connection_name: Optional name in ~/.snowflake/connections.toml (local dev).
+        databases: Optional list of database names to discover. If None, discovers all.
     """
 
     def __init__(
@@ -72,10 +73,12 @@ class SnowflakeDiscovery:
         account: str,
         warehouse: str,
         connection_name: str | None = None,
+        databases: list[str] | None = None,
     ):
         self.account = account
         self.warehouse = warehouse
         self.connection_name = connection_name
+        self.databases = databases
 
         # Per-user caches: user_id -> discovered connections
         self._discovered_connections: dict[str, dict[str, tuple[str, str]]] = {}
@@ -142,11 +145,14 @@ class SnowflakeDiscovery:
         results: list[tuple[str, str, str, str]] = []
         cursor = conn.cursor()
 
-        cursor.execute("SHOW DATABASES")
-        databases = cursor.fetchall()
+        if self.databases:
+            # Use specified databases (skip SHOW DATABASES)
+            db_names = self.databases
+        else:
+            cursor.execute("SHOW DATABASES")
+            db_names = [row[1] for row in cursor.fetchall()]
 
-        for db_row in databases:
-            db_name = db_row[1]  # name is at index 1 in SHOW DATABASES output
+        for db_name in db_names:
 
             try:
                 cursor.execute(f'SHOW SCHEMAS IN DATABASE "{db_name}"')

@@ -12,8 +12,9 @@ from ggsql_rest._errors import register_error_handlers
 from ggsql_rest._sessions import SessionManager
 from ggsql_rest._routes._sessions import router as sessions_router
 from ggsql_rest._routes._sessions import get_session_manager
-from ggsql_rest._routes._query import router as query_router, get_registry
+from ggsql_rest._routes._query import router as query_router
 from ggsql_rest._routes._schema import router as schema_router
+from ggsql_rest._routes._dependencies import get_registry
 
 
 def create_test_app(registry: ConnectionRegistry) -> tuple[FastAPI, SessionManager]:

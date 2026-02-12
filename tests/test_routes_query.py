@@ -8,7 +8,8 @@ from ggsql_rest._errors import register_error_handlers
 from ggsql_rest._sessions import SessionManager
 from ggsql_rest._connections import ConnectionRegistry
 from ggsql_rest._routes._sessions import router as sessions_router, get_session_manager
-from ggsql_rest._routes._query import router as query_router, get_registry
+from ggsql_rest._routes._query import router as query_router
+from ggsql_rest._routes._dependencies import get_registry
 
 
 def create_test_app() -> tuple[FastAPI, SessionManager, ConnectionRegistry]:

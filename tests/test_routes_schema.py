@@ -196,3 +196,101 @@ async def test_schema_tables_with_remote():
         assert remote_tables[0]["tableName"] == "users"
         # Verify no columns are included
         assert "columns" not in remote_tables[0]
+
+
+@pytest.mark.anyio
+async def test_schema_table_local():
+    """Per-table schema endpoint returns local table columns."""
+    app, session_mgr = create_test_app(ConnectionRegistry())
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        csv_content = b"x,y,label\n1,10,a\n2,20,b\n3,30,a"
+        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
+        await client.post(f"/sessions/{session.id}/upload", files=files)
+
+        response = await client.get(f"/sessions/{session.id}/schema/table/_upload_data")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "success"
+        table = body["data"]
+        assert table["tableName"] == "_upload_data"
+        assert table["connection"] is None
+        assert len(table["columns"]) == 3
+        column_names = {c["columnName"] for c in table["columns"]}
+        assert column_names == {"x", "y", "label"}
+
+
+@pytest.mark.anyio
+async def test_schema_table_with_stats():
+    """Per-table schema endpoint with include_stats returns column statistics."""
+    app, session_mgr = create_test_app(ConnectionRegistry())
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        csv_content = b"score,category\n10,A\n20,B\n30,A"
+        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
+        await client.post(f"/sessions/{session.id}/upload", files=files)
+
+        response = await client.get(
+            f"/sessions/{session.id}/schema/table/_upload_data?include_stats=true"
+        )
+
+        assert response.status_code == 200
+        table = response.json()["data"]
+        columns = {c["columnName"]: c for c in table["columns"]}
+
+        # Numeric column should have min/max
+        assert columns["score"]["minValue"] == "10"
+        assert columns["score"]["maxValue"] == "30"
+
+        # Categorical column should have values
+        assert "categoricalValues" in columns["category"]
+        assert set(columns["category"]["categoricalValues"]) == {"A", "B"}
+
+
+@pytest.mark.anyio
+async def test_schema_table_remote():
+    """Per-table schema endpoint returns remote table columns."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE users (id INTEGER, name TEXT)"))
+        conn.execute(text("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')"))
+
+    registry = ConnectionRegistry()
+    registry.register("test_db", lambda _req: engine)
+
+    app, session_mgr = create_test_app(registry)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        response = await client.get(
+            f"/sessions/{session.id}/schema/table/users?connection=test_db"
+        )
+
+        assert response.status_code == 200
+        table = response.json()["data"]
+        assert table["tableName"] == "users"
+        assert table["connection"] == "test_db"
+        column_names = {c["columnName"] for c in table["columns"]}
+        assert column_names == {"id", "name"}
+
+
+@pytest.mark.anyio
+async def test_schema_table_not_found():
+    """Per-table schema endpoint returns 404 for nonexistent table."""
+    app, session_mgr = create_test_app(ConnectionRegistry())
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        response = await client.get(f"/sessions/{session.id}/schema/table/nonexistent")
+        assert response.status_code == 404

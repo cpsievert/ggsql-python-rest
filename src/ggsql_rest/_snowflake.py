@@ -406,6 +406,60 @@ class SnowflakeDiscovery:
             return False
         return connection_name in self._discovered_connections[user_id]
 
+    def get_single_table_schema(
+        self,
+        request: Request,
+        table_name: str,
+        connection: str,
+    ) -> TableSchema | None:
+        """Get column schema for a single Snowflake table.
+
+        Uses SHOW COLUMNS IN TABLE for targeted introspection.
+
+        Args:
+            request: FastAPI request (for auth).
+            table_name: The table name.
+            connection: Connection name in "DATABASE.SCHEMA" format.
+
+        Returns:
+            TableSchema if found, None if connection or table not found.
+        """
+        from ._models import ColumnSchema, TableSchema
+
+        user_id = self._extract_user_id(request)
+        connections = self._discovered_connections.get(user_id, {})
+        if connection not in connections:
+            return None
+
+        database, schema = connections[connection]
+
+        conn = self._create_connection(request, database=database, schema=schema)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f'SHOW COLUMNS IN TABLE "{database}"."{schema}"."{table_name}"'
+            )
+            rows = cursor.fetchall()
+
+            if not rows:
+                return None
+
+            columns = [
+                ColumnSchema(
+                    column_name=row[2],
+                    data_type=_parse_snowflake_type(row[3]),
+                )
+                for row in rows
+            ]
+
+            return TableSchema(
+                table_name=table_name,
+                connection=connection,
+                columns=columns,
+            )
+        finally:
+            conn.close()
+
     def dispose_all(self) -> None:
         """Dispose all cached engines and clear caches."""
         for engine in self._engines.values():

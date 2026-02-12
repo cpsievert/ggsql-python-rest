@@ -48,6 +48,10 @@ class ConnectionRegistry:
         """List available connection names."""
         return list(self._factories.keys())
 
+    def has_connection(self, name: str) -> bool:
+        """Check if a connection name is registered."""
+        return name in self._factories
+
     def dispose_all(self) -> None:
         """Dispose all cached engines. Called on shutdown."""
         for engine in self._engines.values():

@@ -1,9 +1,9 @@
 """Schema introspection route."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .._connections import ConnectionRegistry
-from .._models import SchemaResponse, TableNameEntry, TableNamesResponse, success_envelope
+from .._models import SchemaResponse, TableNameEntry, TableNamesResponse, TableSchema, success_envelope
 from .._schema import get_local_table_schema, get_remote_table_names, get_remote_table_schemas
 from .._sessions import Session
 from .._snowflake import SnowflakeDiscovery
@@ -75,3 +75,60 @@ async def schema(
         tables.extend(snowflake_tables)
 
     return success_envelope(SchemaResponse(tables=tables))
+
+
+@router.get("/schema/table/{table_name}")
+async def schema_table(
+    request: Request,
+    table_name: str,
+    connection: str | None = None,
+    include_stats: bool = False,
+    session: Session = Depends(get_session),
+    registry: ConnectionRegistry = Depends(get_registry),
+    snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
+) -> dict:
+    """Return schema for a single table (local or remote)."""
+    table_schema: TableSchema | None = None
+
+    # Local table
+    if connection is None:
+        if table_name in session.tables:
+            table_schema = get_local_table_schema(
+                session.duckdb, table_name, include_stats
+            )
+        else:
+            raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+
+    # Remote table from ConnectionRegistry
+    elif registry.has_connection(connection):
+        engine = registry.get_engine(connection, request)
+        remote_tables = get_remote_table_schemas(engine, connection, include_stats)
+        # Filter to requested table
+        matching = [t for t in remote_tables if t.table_name == table_name]
+        if matching:
+            table_schema = matching[0]
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Table '{table_name}' not found in connection '{connection}'"
+            )
+
+    # Snowflake table
+    elif snowflake is not None and snowflake.has_connection(connection, request):
+        table_schema = snowflake.get_single_table_schema(
+            request, table_name, connection
+        )
+        if table_schema is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Table '{table_name}' not found in Snowflake connection '{connection}'"
+            )
+
+    # Connection not found
+    else:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Connection '{connection}' not found"
+        )
+
+    return success_envelope(table_schema)

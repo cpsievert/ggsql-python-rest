@@ -16,6 +16,8 @@ import snowflake.connector as snowflake_connector
 from sqlalchemy import create_engine
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from fastapi import Request
     from snowflake.connector import SnowflakeConnection
     from sqlalchemy import Engine
@@ -182,6 +184,54 @@ class SnowflakeDiscovery:
 
         return results
 
+    def _discover_catalog_by_database(
+        self,
+        conn: SnowflakeConnection,
+    ) -> Iterator[tuple[str, list[tuple[str, str, str, str]]]]:
+        """Discover tables database-by-database, yielding after each.
+
+        Yields (database_name, entries) tuples where entries are
+        (connection_name, database, schema, table_name) tuples.
+        """
+        cursor = conn.cursor()
+
+        if self.databases:
+            db_names = self.databases
+        else:
+            cursor.execute("SHOW DATABASES")
+            db_names = [row[1] for row in cursor.fetchall()]
+
+        for db_name in db_names:
+            db_entries: list[tuple[str, str, str, str]] = []
+
+            try:
+                cursor.execute(f'SHOW SCHEMAS IN DATABASE "{db_name}"')
+                schemas = cursor.fetchall()
+            except Exception:
+                continue
+
+            for schema_row in schemas:
+                schema_name = schema_row[1]
+                if schema_name == "INFORMATION_SCHEMA":
+                    continue
+
+                conn_name = f"{db_name}.{schema_name}"
+
+                try:
+                    cursor.execute(
+                        f'SHOW TABLES IN SCHEMA "{db_name}"."{schema_name}"'
+                    )
+                    tables = cursor.fetchall()
+                except Exception:
+                    continue
+
+                for table_row in tables:
+                    table_name = table_row[1]
+                    db_entries.append((conn_name, db_name, schema_name, table_name))
+
+            if db_entries:
+                yield db_name, db_entries
+
     def _discover_columns(
         self,
         conn: SnowflakeConnection,
@@ -306,6 +356,50 @@ class SnowflakeDiscovery:
             result.append((table_name, conn_name))
 
         return result
+
+    def stream_table_names(
+        self,
+        request: Request,
+    ) -> Iterator[tuple[str, list[tuple[str, str]]]]:
+        """Stream table names per-database.
+
+        Yields (database_name, table_entries) tuples where table_entries
+        are (table_name, connection_name) pairs.
+
+        Also populates the catalog and connections caches incrementally.
+        """
+        user_id = self._extract_user_id(request)
+
+        # If already cached, yield everything at once (grouped by database)
+        if user_id in self._discovered_catalog:
+            catalog_data = self._discovered_catalog[user_id]
+            by_db: dict[str, list[tuple[str, str]]] = {}
+            for conn_name, database, _schema, table_name in catalog_data:
+                by_db.setdefault(database, []).append((table_name, conn_name))
+            for db_name, entries in by_db.items():
+                yield db_name, entries
+            return
+
+        conn = self._create_connection(request)
+        try:
+            all_catalog: list[tuple[str, str, str, str]] = []
+            connections: dict[str, tuple[str, str]] = {}
+
+            for db_name, db_entries in self._discover_catalog_by_database(conn):
+                batch: list[tuple[str, str]] = []
+                for conn_name, database, schema, table_name in db_entries:
+                    all_catalog.append((conn_name, database, schema, table_name))
+                    if conn_name not in connections:
+                        connections[conn_name] = (database, schema)
+                    batch.append((table_name, conn_name))
+
+                yield db_name, batch
+
+            # Cache everything after iteration completes
+            self._discovered_catalog[user_id] = all_catalog
+            self._discovered_connections[user_id] = connections
+        finally:
+            conn.close()
 
     def get_tables(
         self,

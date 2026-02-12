@@ -15,14 +15,12 @@ from typing import TYPE_CHECKING
 import snowflake.connector as snowflake_connector
 from sqlalchemy import create_engine
 
-from ._schema import get_remote_table_schemas
-
 if TYPE_CHECKING:
     from fastapi import Request
     from snowflake.connector import SnowflakeConnection
     from sqlalchemy import Engine
 
-    from ._models import TableSchema
+    from ._models import ColumnSchema, TableSchema
 
 # Optional import — only available on Connect
 try:
@@ -81,6 +79,8 @@ class SnowflakeDiscovery:
 
         # Per-user caches: user_id -> discovered connections
         self._discovered_connections: dict[str, dict[str, tuple[str, str]]] = {}
+        # Per-user caches: user_id -> discovered tables
+        self._discovered_tables: dict[str, list[TableSchema]] = {}
         # Engine cache: (user_id, connection_name) -> Engine
         self._engines: OrderedDict[tuple[str, str], Engine] = OrderedDict()
         self._max_engines = 50
@@ -174,6 +174,46 @@ class SnowflakeDiscovery:
 
         return results
 
+    def _discover_columns(
+        self,
+        conn: SnowflakeConnection,
+        databases: list[str],
+    ) -> dict[tuple[str, str, str], list[tuple[str, str]]]:
+        """Discover columns for all tables using SHOW COLUMNS IN DATABASE.
+
+        Args:
+            conn: Active Snowflake connection.
+            databases: List of database names to query.
+
+        Returns:
+            Dict mapping (database, schema, table) -> [(column_name, data_type), ...]
+        """
+        columns: dict[tuple[str, str, str], list[tuple[str, str]]] = {}
+        cursor = conn.cursor()
+
+        for db_name in databases:
+            try:
+                cursor.execute(f'SHOW COLUMNS IN DATABASE "{db_name}"')
+                rows = cursor.fetchall()
+            except Exception:
+                continue
+
+            for row in rows:
+                table_name = row[0]
+                schema_name = row[1]
+                col_name = row[2]
+                data_type_json = row[3]
+
+                if schema_name == "INFORMATION_SCHEMA":
+                    continue
+
+                key = (db_name, schema_name, table_name)
+                if key not in columns:
+                    columns[key] = []
+                columns[key].append((col_name, _parse_snowflake_type(data_type_json)))
+
+        return columns
+
     def _extract_user_id(self, request: Request) -> str:
         """Extract user ID from request headers."""
         return request.headers.get("x-user-id", "anonymous")
@@ -224,38 +264,59 @@ class SnowflakeDiscovery:
     ) -> list[TableSchema]:
         """Get table schemas for all connections the user has access to.
 
-        This is the main public API for the schema route.
-
-        Note: include_stats is accepted for interface compatibility but always
-        forced to False for Snowflake. Column stats queries (MIN/MAX/DISTINCT)
-        are too expensive on large Snowflake tables and hit case-sensitivity
-        issues with the snowflake-sqlalchemy dialect's lowercased identifiers.
+        Uses SHOW COLUMNS IN DATABASE to get column metadata from the
+        existing discovery connection, avoiding per-schema engine creation.
         """
         user_id = self._extract_user_id(request)
 
-        # Discover catalog if not cached for this user
-        if user_id not in self._discovered_connections:
-            conn = self._create_connection(request)
-            catalog_data = self._discover_catalog(conn)
-            conn.close()
+        # Return cached tables if already discovered for this user
+        if user_id in self._discovered_tables:
+            return self._discovered_tables[user_id]
 
-            # Build connections dict: connection_name -> (database, schema)
+        # Open a single connection for all discovery
+        conn = self._create_connection(request)
+        try:
+            catalog_data = self._discover_catalog(conn)
+
+            # Build connections dict and collect metadata
             connections: dict[str, tuple[str, str]] = {}
-            for conn_name, database, schema, _table_name in catalog_data:
+            databases: set[str] = set()
+            table_connections: dict[tuple[str, str, str], str] = {}
+
+            for conn_name, database, schema, table_name in catalog_data:
                 if conn_name not in connections:
                     connections[conn_name] = (database, schema)
+                databases.add(database)
+                table_connections[(database, schema, table_name)] = conn_name
 
-            self._discovered_connections[user_id] = connections
+            # Get all columns via SHOW COLUMNS IN DATABASE
+            all_columns = self._discover_columns(conn, sorted(databases))
+        finally:
+            conn.close()
 
-        # Get schemas for all discovered connections
-        # Always skip stats for Snowflake — too expensive and quoting issues.
+        # Build TableSchema objects
+        from ._models import ColumnSchema, TableSchema
+
         all_tables: list[TableSchema] = []
-        connections = self._discovered_connections[user_id]
+        for (db, schema, table), cols in all_columns.items():
+            conn_name = table_connections.get((db, schema, table))
+            if conn_name is None:
+                continue  # Column for a table not in our catalog (e.g., views)
 
-        for conn_name, (database, schema) in connections.items():
-            engine = self._get_cached_engine(user_id, conn_name, request, database, schema)
-            tables = get_remote_table_schemas(engine, conn_name, include_stats=False)
-            all_tables.extend(tables)
+            all_tables.append(
+                TableSchema(
+                    table_name=table,
+                    connection=conn_name,
+                    columns=[
+                        ColumnSchema(column_name=name, data_type=dtype)
+                        for name, dtype in cols
+                    ],
+                )
+            )
+
+        # Cache results
+        self._discovered_connections[user_id] = connections
+        self._discovered_tables[user_id] = all_tables
 
         return all_tables
 
@@ -301,3 +362,4 @@ class SnowflakeDiscovery:
             engine.dispose()
         self._engines.clear()
         self._discovered_connections.clear()
+        self._discovered_tables.clear()

@@ -217,8 +217,8 @@ class TestCatalogDiscovery:
 class TestGetTables:
     """Test get_tables() method for schema route."""
 
-    def test_get_tables_returns_table_schemas(self):
-        """get_tables() returns list of TableSchema objects."""
+    def test_get_tables_uses_show_columns(self):
+        """get_tables() uses SHOW COLUMNS instead of per-schema engines."""
         discovery = SnowflakeDiscovery(
             account="test-account",
             warehouse="TEST_WH",
@@ -226,48 +226,57 @@ class TestGetTables:
         )
         request = _make_request({"x-user-id": "user1"})
 
-        # Mock the chain: _create_connection -> _discover_catalog
         mock_conn = MagicMock()
-        catalog_data = [
-            ("DB1.PUBLIC", "DB1", "PUBLIC", "USERS"),
-            ("DB1.PUBLIC", "DB1", "PUBLIC", "ORDERS"),
-        ]
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
 
-        # Mock TableSchema objects that get_remote_table_schemas would return
-        from ggsql_rest._models import ColumnSchema, TableSchema
+        call_count = {"fetchall": 0}
 
-        mock_tables = [
-            TableSchema(
-                table_name="USERS",
-                connection="DB1.PUBLIC",
-                columns=[ColumnSchema(column_name="id", data_type="INTEGER")],
-            ),
-            TableSchema(
-                table_name="ORDERS",
-                connection="DB1.PUBLIC",
-                columns=[ColumnSchema(column_name="order_id", data_type="INTEGER")],
-            ),
-        ]
+        def fetchall_side_effect():
+            call_count["fetchall"] += 1
+            if call_count["fetchall"] == 1:
+                # SHOW DATABASES
+                return [("created_on", "DB1", "owner", "comment", "options", "retention_time")]
+            elif call_count["fetchall"] == 2:
+                # SHOW SCHEMAS IN DATABASE "DB1"
+                return [("created_on", "PUBLIC", "database", "owner", "comment", "options")]
+            elif call_count["fetchall"] == 3:
+                # SHOW TABLES IN SCHEMA "DB1"."PUBLIC"
+                return [
+                    ("created_on", "USERS", "database", "schema", "kind", "comment"),
+                    ("created_on", "ORDERS", "database", "schema", "kind", "comment"),
+                ]
+            elif call_count["fetchall"] == 4:
+                # SHOW COLUMNS IN DATABASE "DB1"
+                return [
+                    ("USERS", "PUBLIC", "id", '{"type":"FIXED","precision":38,"scale":0,"nullable":true}', "Y", None, "COLUMN", None, None, "DB1", None, None),
+                    ("USERS", "PUBLIC", "name", '{"type":"TEXT","length":16777216,"nullable":true,"fixed":false}', "Y", None, "COLUMN", None, None, "DB1", None, None),
+                    ("ORDERS", "PUBLIC", "order_id", '{"type":"FIXED","precision":38,"scale":0,"nullable":true}', "Y", None, "COLUMN", None, None, "DB1", None, None),
+                    ("SOME_TABLE", "INFORMATION_SCHEMA", "col1", '{"type":"TEXT","length":100,"nullable":true,"fixed":false}', "Y", None, "COLUMN", None, None, "DB1", None, None),
+                ]
+            raise ValueError(f"Unexpected fetchall call #{call_count['fetchall']}")
 
-        with (
-            patch.object(discovery, "_create_connection", return_value=mock_conn),
-            patch.object(discovery, "_discover_catalog", return_value=catalog_data),
-            patch.object(discovery, "_create_engine") as mock_create_engine,
-            patch("ggsql_rest._snowflake.get_remote_table_schemas", return_value=mock_tables),
-        ):
+        mock_cursor.fetchall.side_effect = fetchall_side_effect
+
+        with patch.object(discovery, "_create_connection", return_value=mock_conn):
             result = discovery.get_tables(request, include_stats=False)
 
-            # Verify _discover_catalog was called
-            discovery._discover_catalog.assert_called_once_with(mock_conn)
-            # Verify engine creation
-            mock_create_engine.assert_called_once()
-            # Verify result
-            assert len(result) == 2
-            assert result[0].table_name == "USERS"
-            assert result[1].table_name == "ORDERS"
+        assert len(result) == 2
+
+        users = next(t for t in result if t.table_name == "USERS")
+        assert users.connection == "DB1.PUBLIC"
+        assert len(users.columns) == 2
+        assert users.columns[0].column_name == "id"
+        assert users.columns[0].data_type == "NUMBER(38,0)"
+        assert users.columns[1].column_name == "name"
+        assert users.columns[1].data_type == "VARCHAR"
+
+        orders = next(t for t in result if t.table_name == "ORDERS")
+        assert orders.connection == "DB1.PUBLIC"
+        assert len(orders.columns) == 1
 
     def test_get_tables_caches_per_user(self):
-        """get_tables() caches discovered connections per user."""
+        """get_tables() caches discovered tables per user."""
         discovery = SnowflakeDiscovery(
             account="test-account",
             warehouse="TEST_WH",
@@ -275,32 +284,22 @@ class TestGetTables:
         )
         request = _make_request({"x-user-id": "user1"})
 
-        mock_conn = MagicMock()
-        catalog_data = [("DB1.PUBLIC", "DB1", "PUBLIC", "USERS")]
-
         from ggsql_rest._models import ColumnSchema, TableSchema
-
-        mock_tables = [
+        discovery._discovered_tables["user1"] = [
             TableSchema(
                 table_name="USERS",
                 connection="DB1.PUBLIC",
-                columns=[ColumnSchema(column_name="id", data_type="INTEGER")],
+                columns=[ColumnSchema(column_name="id", data_type="NUMBER(38,0)")],
             )
         ]
+        discovery._discovered_connections["user1"] = {"DB1.PUBLIC": ("DB1", "PUBLIC")}
 
-        with (
-            patch.object(discovery, "_create_connection", return_value=mock_conn),
-            patch.object(discovery, "_discover_catalog", return_value=catalog_data) as mock_discover,
-            patch.object(discovery, "_create_engine"),
-            patch("ggsql_rest._snowflake.get_remote_table_schemas", return_value=mock_tables),
-        ):
-            # First call
-            discovery.get_tables(request, include_stats=False)
-            # Second call
-            discovery.get_tables(request, include_stats=False)
+        with patch.object(discovery, "_create_connection") as mock_create:
+            result = discovery.get_tables(request, include_stats=False)
 
-            # _discover_catalog should only be called once
-            assert mock_discover.call_count == 1
+        assert len(result) == 1
+        assert result[0].table_name == "USERS"
+        mock_create.assert_not_called()
 
 
 class TestGetEngine:

@@ -393,11 +393,14 @@ class SnowflakeDiscovery:
                         connections[conn_name] = (database, schema)
                     batch.append((table_name, conn_name))
 
+                # Register connections before yielding so they're queryable
+                # as soon as the client receives the table names
+                self._discovered_connections[user_id] = dict(connections)
+
                 yield db_name, batch
 
-            # Cache everything after iteration completes
+            # Cache full catalog after iteration completes
             self._discovered_catalog[user_id] = all_catalog
-            self._discovered_connections[user_id] = connections
         finally:
             conn.close()
 

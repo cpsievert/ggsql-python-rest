@@ -570,6 +570,66 @@ class TestStreamTableNames:
         # Should close the connection
         mock_conn.close.assert_called_once()
 
+    def test_registers_connections_incrementally(self):
+        """Connections are registered before each yield so they're queryable mid-stream."""
+        discovery = SnowflakeDiscovery(
+            account="test-account",
+            warehouse="TEST_WH",
+            connection_name="my_conn",
+        )
+        request = _make_request({"x-user-id": "user1"})
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        call_count = {"fetchall": 0}
+
+        def fetchall_side_effect():
+            call_count["fetchall"] += 1
+            if call_count["fetchall"] == 1:
+                # SHOW DATABASES
+                return [
+                    ("created_on", "DB1", "owner", "comment", "options", "retention_time"),
+                    ("created_on", "DB2", "owner", "comment", "options", "retention_time"),
+                ]
+            elif call_count["fetchall"] == 2:
+                # SHOW SCHEMAS IN DATABASE "DB1"
+                return [("created_on", "PUBLIC", "database", "owner", "comment", "options")]
+            elif call_count["fetchall"] == 3:
+                # SHOW TABLES IN SCHEMA "DB1"."PUBLIC"
+                return [("created_on", "USERS", "database", "schema", "kind", "comment")]
+            elif call_count["fetchall"] == 4:
+                # SHOW SCHEMAS IN DATABASE "DB2"
+                return [("created_on", "PUBLIC", "database", "owner", "comment", "options")]
+            elif call_count["fetchall"] == 5:
+                # SHOW TABLES IN SCHEMA "DB2"."PUBLIC"
+                return [("created_on", "PRODUCTS", "database", "schema", "kind", "comment")]
+            raise ValueError(f"Unexpected fetchall call #{call_count['fetchall']}")
+
+        mock_cursor.fetchall.side_effect = fetchall_side_effect
+
+        with patch.object(discovery, "_create_connection", return_value=mock_conn):
+            gen = discovery.stream_table_names(request)
+
+            # Before any iteration, no connections registered
+            assert "user1" not in discovery._discovered_connections
+
+            # After first yield (DB1), DB1.PUBLIC should be registered
+            next(gen)
+            assert "user1" in discovery._discovered_connections
+            assert "DB1.PUBLIC" in discovery._discovered_connections["user1"]
+            assert "DB2.PUBLIC" not in discovery._discovered_connections["user1"]
+
+            # DB1.PUBLIC is now queryable via get_engine (would work if called)
+            assert discovery.has_connection("DB1.PUBLIC", request)
+            assert not discovery.has_connection("DB2.PUBLIC", request)
+
+            # After second yield (DB2), both should be registered
+            next(gen)
+            assert "DB2.PUBLIC" in discovery._discovered_connections["user1"]
+            assert discovery.has_connection("DB2.PUBLIC", request)
+
     def test_populates_cache_after_full_iteration(self):
         """Consuming the full generator populates the cache."""
         discovery = SnowflakeDiscovery(

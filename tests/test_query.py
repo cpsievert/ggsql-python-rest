@@ -33,3 +33,16 @@ def test_execute_ggsql_no_visualise():
 
     with pytest.raises(ValueError, match="VISUALISE"):
         execute_ggsql("SELECT 1 as x", session, engine=None)
+
+
+def test_execute_ggsql_invalid_parse():
+    """Test that malformed ggsql queries raise a validation error instead of 500."""
+    session = Session("test", timeout_mins=30)
+
+    # Trailing SQL after VISUALISE produces a parse error
+    with pytest.raises(ValueError, match="Invalid ggsql query"):
+        execute_ggsql(
+            "SELECT 1 as x VISUALISE x, x DRAW point SELECT 1",
+            session,
+            engine=None,
+        )

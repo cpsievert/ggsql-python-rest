@@ -53,7 +53,7 @@ async def test_schema_local_table():
         assert body["status"] == "success"
         tables = body["data"]["tables"]
         assert len(tables) == 1
-        assert tables[0]["tableName"] == "_upload_data"
+        assert tables[0]["tableName"] == "data"
         assert tables[0]["connection"] is None
         assert len(tables[0]["columns"]) == 3
 
@@ -158,7 +158,7 @@ async def test_schema_tables_local():
         assert body["status"] == "success"
         tables = body["data"]["tables"]
         assert len(tables) == 1
-        assert tables[0]["tableName"] == "_upload_data"
+        assert tables[0]["tableName"] == "data"
         assert tables[0]["connection"] is None
         # Verify no columns are included
         assert "columns" not in tables[0]
@@ -211,13 +211,13 @@ async def test_schema_table_local():
         files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
         await client.post(f"/sessions/{session.id}/upload", files=files)
 
-        response = await client.get(f"/sessions/{session.id}/schema/table/_upload_data")
+        response = await client.get(f"/sessions/{session.id}/schema/table/data")
 
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "success"
         table = body["data"]
-        assert table["tableName"] == "_upload_data"
+        assert table["tableName"] == "data"
         assert table["connection"] is None
         assert len(table["columns"]) == 3
         column_names = {c["columnName"] for c in table["columns"]}
@@ -237,7 +237,7 @@ async def test_schema_table_with_stats():
         await client.post(f"/sessions/{session.id}/upload", files=files)
 
         response = await client.get(
-            f"/sessions/{session.id}/schema/table/_upload_data?include_stats=true"
+            f"/sessions/{session.id}/schema/table/data?include_stats=true"
         )
 
         assert response.status_code == 200
@@ -323,7 +323,7 @@ async def test_schema_tables_stream_local():
         first_line = json.loads(lines[0])
         assert "tables" in first_line
         assert len(first_line["tables"]) == 1
-        assert first_line["tables"][0]["tableName"] == "_upload_data"
+        assert first_line["tables"][0]["tableName"] == "data"
         assert first_line["tables"][0]["connection"] is None
 
 

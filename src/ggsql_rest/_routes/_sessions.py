@@ -4,7 +4,7 @@ import io
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, UploadFile
+from fastapi import APIRouter, Depends, Form, UploadFile
 import polars as pl
 
 from .._errors import invalid_request, session_not_found
@@ -64,8 +64,8 @@ def _sanitize_table_name(stem: str, existing_tables: list[str]) -> str:
     name = re.sub(r"_+", "_", name)
     # Strip leading/trailing underscores
     name = name.strip("_")
-    # Prefix to namespace away from __remote_result_* internal tables
-    name = f"_upload_{name}" if name else "_upload_unnamed"
+    # Use fallback for empty names
+    name = name or "unnamed"
 
     # Deduplicate if name already exists
     base_name = name
@@ -80,14 +80,16 @@ def _sanitize_table_name(stem: str, existing_tables: list[str]) -> str:
 @router.post("/{session_id}/upload")
 async def upload_file(
     file: UploadFile,
+    table_name: str | None = Form(None),
     session: Session = Depends(get_session),
 ) -> dict:
     """Upload a file to the session's DuckDB instance."""
     if file.filename is None:
         raise invalid_request("Filename is required")
 
-    # Derive safe table name from filename
-    table_name = _sanitize_table_name(Path(file.filename).stem, session.tables)
+    # Use explicit table name or derive from filename
+    if table_name is None:
+        table_name = _sanitize_table_name(Path(file.filename).stem, session.tables)
 
     # Read file content
     content = await file.read()

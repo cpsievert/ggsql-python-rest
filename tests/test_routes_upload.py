@@ -37,13 +37,13 @@ async def test_upload_csv():
         body = response.json()
         assert body["status"] == "success"
         data = body["data"]
-        assert data["tableName"] == "_upload_data"
+        assert data["tableName"] == "data"
         assert data["rowCount"] == 3
         assert "x" in data["columns"]
         assert "y" in data["columns"]
 
         # Verify table is in session
-        assert "_upload_data" in session.tables
+        assert "data" in session.tables
 
 
 @pytest.mark.anyio
@@ -68,7 +68,7 @@ async def test_upload_parquet():
         body = response.json()
         assert body["status"] == "success"
         data = body["data"]
-        assert data["tableName"] == "_upload_data"
+        assert data["tableName"] == "data"
         assert data["rowCount"] == 3
         assert "a" in data["columns"]
         assert "b" in data["columns"]
@@ -90,7 +90,7 @@ async def test_upload_json():
         body = response.json()
         assert body["status"] == "success"
         data = body["data"]
-        assert data["tableName"] == "_upload_data"
+        assert data["tableName"] == "data"
         assert data["rowCount"] == 2
 
 
@@ -111,7 +111,7 @@ async def test_upload_filename_sanitization():
         body = response.json()
         assert body["status"] == "success"
         data = body["data"]
-        assert data["tableName"] == "_upload_my_data_file"
+        assert data["tableName"] == "my_data_file"
 
 
 @pytest.mark.anyio
@@ -162,7 +162,7 @@ async def test_upload_sanitizes_special_chars():
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "success"
-        assert body["data"]["tableName"] == "_upload_my_data_file"
+        assert body["data"]["tableName"] == "my_data_file"
 
 
 @pytest.mark.anyio
@@ -180,7 +180,7 @@ async def test_upload_sanitizes_leading_digit():
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "success"
-        assert body["data"]["tableName"] == "_upload_2024_data"
+        assert body["data"]["tableName"] == "2024_data"
 
 
 @pytest.mark.anyio
@@ -198,14 +198,39 @@ async def test_upload_deduplicates_table_name():
         assert resp1.status_code == 200
         body1 = resp1.json()
         assert body1["status"] == "success"
-        assert body1["data"]["tableName"] == "_upload_data"
+        assert body1["data"]["tableName"] == "data"
 
         files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
         resp2 = await client.post(f"/sessions/{session.id}/upload", files=files)
         assert resp2.status_code == 200
         body2 = resp2.json()
         assert body2["status"] == "success"
-        assert body2["data"]["tableName"] == "_upload_data_2"
+        assert body2["data"]["tableName"] == "data_2"
 
         # Both tables should be tracked
         assert len(session.tables) == 2
+
+
+@pytest.mark.anyio
+async def test_upload_with_explicit_table_name():
+    app, session_mgr = create_test_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        csv_content = b"x,y\n1,2"
+        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
+        data = {"table_name": "my_custom_table"}
+
+        response = await client.post(
+            f"/sessions/{session.id}/upload", files=files, data=data
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "success"
+        assert body["data"]["tableName"] == "my_custom_table"
+        assert body["data"]["rowCount"] == 1
+
+        # Verify table is in session
+        assert "my_custom_table" in session.tables

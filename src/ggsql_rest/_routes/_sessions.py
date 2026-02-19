@@ -97,7 +97,7 @@ async def upload_file(
 
     # Parse based on extension
     if extension == ".csv":
-        df = pl.read_csv(io.BytesIO(content))
+        df = pl.read_csv(io.BytesIO(content), null_values=["NA"])
     elif extension == ".parquet":
         df = pl.read_parquet(io.BytesIO(content))
     elif extension in (".json", ".jsonl", ".ndjson"):

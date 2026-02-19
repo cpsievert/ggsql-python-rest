@@ -212,6 +212,26 @@ async def test_upload_deduplicates_table_name():
 
 
 @pytest.mark.anyio
+async def test_upload_csv_with_na_values():
+    app, session_mgr = create_test_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        csv_content = b"x,y\n1,2\nNA,4\n5,NA"
+        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
+
+        response = await client.post(f"/sessions/{session.id}/upload", files=files)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "success"
+        data = body["data"]
+        assert data["rowCount"] == 3
+        assert data["columns"] == ["x", "y"]
+
+
+@pytest.mark.anyio
 async def test_upload_with_explicit_table_name():
     app, session_mgr = create_test_app()
     transport = ASGITransport(app=app)

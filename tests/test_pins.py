@@ -306,7 +306,7 @@ class TestEnsurePinLoaded:
         mock_session.duckdb.register.assert_called_once()
         call_args = mock_session.duckdb.register.call_args
         assert call_args[0][0] == "alice__data"
-        assert isinstance(call_args[0][1], pl.DataFrame)
+        assert isinstance(call_args[0][1], pd.DataFrame)
         assert call_args[0][1].shape == (3, 2)
         assert "alice__data" in mock_session.tables
 

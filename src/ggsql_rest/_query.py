@@ -17,33 +17,51 @@ except ImportError:
     HAS_CONNECTORX = False
 
 
+_DEFAULT_GGSQL_MAX_ROWS = 500_000
+
+
 def fetch_remote_into_duckdb(
     engine: Engine,
     sql: str,
     session: Session,
     table_name: str,
     max_rows: int | None = None,
-) -> None:
+) -> bool:
     """Fetch remote SQL results and register them in session's DuckDB.
 
     When connectorx is available, fetches as a single Arrow DataFrame (zero-copy).
     Otherwise, streams chunks via server-side cursor to bound memory usage.
+
+    Returns True if result was truncated to max_rows, False otherwise.
     """
-    if max_rows is not None:
-        sql = f"SELECT * FROM ({sql}) AS _limited LIMIT {max_rows}"
+    truncated = False
+
+    # Fetch one extra row to detect truncation
+    fetch_limit = max_rows + 1 if max_rows is not None else None
 
     cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
 
     if cx_url is not None:
         try:
-            df = execute_via_connectorx(cx_url, sql, row_limit=None)
+            if fetch_limit is not None:
+                fetch_sql = f"SELECT * FROM ({sql}) AS _limited LIMIT {fetch_limit}"
+            else:
+                fetch_sql = sql
+            df = execute_via_connectorx(cx_url, fetch_sql, row_limit=None)
+
+            # Check for truncation
+            if max_rows is not None and len(df) > max_rows:
+                truncated = True
+                df = df.head(max_rows)
+
             session.duckdb.register(table_name, df)
-            return
+            return truncated
         except Exception:
             pass  # Fall through to cursor streaming path
 
     # Cursor path: stream chunks into DuckDB to bound memory
     batch_size = 10_000
+    total_rows = 0
     with engine.connect() as conn:
         conn = conn.execution_options(stream_results=True)
         result = conn.execute(text(sql))
@@ -52,12 +70,24 @@ def fetch_remote_into_duckdb(
         created = False
 
         while True:
+            # If we've hit the limit, stop fetching
+            if max_rows is not None and total_rows >= max_rows:
+                truncated = True
+                break
+
             rows = result.fetchmany(batch_size)
             if not rows:
                 break
 
+            # Check if this chunk would exceed max_rows
+            if max_rows is not None and total_rows + len(rows) > max_rows:
+                # Take only what we need
+                rows = rows[: max_rows - total_rows]
+                truncated = True
+
             data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
             chunk_df = pl.DataFrame(data)
+            total_rows += len(rows)
 
             if not created:
                 session.duckdb.register(table_name, chunk_df)
@@ -68,11 +98,18 @@ def fetch_remote_into_duckdb(
                     f'INSERT INTO "{table_name}" SELECT * FROM __chunk__'
                 )
 
+            # Stop if we hit the limit
+            if max_rows is not None and total_rows >= max_rows:
+                truncated = True
+                break
+
         if not created:
             # Empty result — register empty DataFrame with correct columns
             session.duckdb.register(
                 table_name, pl.DataFrame({col: [] for col in columns})
             )
+
+    return truncated
 
 
 def execute_ggsql(
@@ -103,10 +140,17 @@ def execute_ggsql(
         raise ValueError("Query must contain VISUALISE clause")
 
     sql_portion = validated.sql()
+    truncated = False
 
     if engine is not None and sql_portion.strip():
+        # Apply default max_rows for remote queries
+        effective_max_rows = (
+            max_rows if max_rows is not None else _DEFAULT_GGSQL_MAX_ROWS
+        )
         table_name = f"__remote_result_{uuid.uuid4().hex[:8]}__"
-        fetch_remote_into_duckdb(engine, sql_portion, session, table_name, max_rows)
+        truncated = fetch_remote_into_duckdb(
+            engine, sql_portion, session, table_name, effective_max_rows
+        )
         local_query = f"SELECT * FROM {table_name} {validated.visual()}"
     else:
         local_query = query
@@ -122,6 +166,7 @@ def execute_ggsql(
             "rows": spec.metadata()["rows"],
             "columns": spec.metadata()["columns"],
             "layers": spec.metadata()["layer_count"],
+            "truncated": truncated,
         },
     }
 

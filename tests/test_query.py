@@ -286,10 +286,8 @@ def test_execute_ggsql_streams_empty_remote_result():
         pass
 
 
-def test_fetch_remote_into_duckdb_pushes_limit_to_db(monkeypatch):
-    """fetch_remote_into_duckdb should inject LIMIT into the SQL sent to the remote DB."""
-    from sqlalchemy import event
-
+def test_fetch_remote_into_duckdb_limits_rows(monkeypatch):
+    """fetch_remote_into_duckdb should respect max_rows and detect truncation."""
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -307,22 +305,15 @@ def test_fetch_remote_into_duckdb_pushes_limit_to_db(monkeypatch):
     # Disable connectorx to force cursor path
     monkeypatch.setattr("ggsql_rest._query.HAS_CONNECTORX", False)
 
-    # Capture the SQL that gets executed via SQLAlchemy event
-    executed_sqls: list[str] = []
-
-    @event.listens_for(engine, "before_cursor_execute")
-    def capture_sql(conn, cursor, statement, parameters, context, executemany):
-        executed_sqls.append(statement)
-
     session = Session("test", timeout_mins=30)
-    fetch_remote_into_duckdb(
+    truncated = fetch_remote_into_duckdb(
         engine, "SELECT * FROM big", session, "test_table", max_rows=50
     )
 
-    # The SQL sent to the DB should contain a LIMIT clause
-    assert any("LIMIT" in sql.upper() for sql in executed_sqls), (
-        f"Expected LIMIT in SQL, got: {executed_sqls}"
-    )
+    # Should detect truncation and limit to max_rows
+    assert truncated is True
+    result_df = session.duckdb.execute_sql("SELECT COUNT(*) as cnt FROM test_table")
+    assert result_df["cnt"][0] == 50
 
 
 def test_execute_sql_passes_timeout(monkeypatch):
@@ -408,3 +399,69 @@ def test_execute_remote_adbc_fallback_on_error():
 
     df = execute_remote(engine, "SELECT * FROM t", adbc_conn=mock_adbc_conn)
     assert len(df) == 2
+
+
+def test_execute_ggsql_default_max_rows():
+    """execute_ggsql should default to 500k max_rows for remote queries."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (x INTEGER, y INTEGER)"))
+        conn.execute(
+            text(
+                "INSERT INTO t (x, y) VALUES "
+                + ", ".join(f"({i}, {i * 2})" for i in range(10))
+            )
+        )
+
+    session = Session("test", timeout_mins=30)
+    result = execute_ggsql(
+        "SELECT * FROM t VISUALISE x, y DRAW point",
+        session,
+        engine=engine,
+    )
+    assert result["metadata"]["truncated"] is False
+
+
+def test_execute_ggsql_reports_truncation():
+    """execute_ggsql should report truncated=True when max_rows is hit."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE big (x INTEGER, y INTEGER)"))
+        conn.execute(
+            text(
+                "INSERT INTO big (x, y) VALUES "
+                + ", ".join(f"({i}, {i * 2})" for i in range(100))
+            )
+        )
+
+    session = Session("test", timeout_mins=30)
+    result = execute_ggsql(
+        "SELECT * FROM big VISUALISE x, y DRAW point",
+        session,
+        engine=engine,
+        max_rows=10,
+    )
+    assert result["metadata"]["truncated"] is True
+    assert result["metadata"]["rows"] <= 10
+
+
+def test_execute_ggsql_local_not_truncated():
+    """Local queries (no engine) should never report truncation."""
+    session = Session("test", timeout_mins=30)
+    session.duckdb.execute_sql(
+        "CREATE TABLE t AS SELECT 1 as x, 2 as y UNION SELECT 3, 4"
+    )
+    result = execute_ggsql(
+        "SELECT * FROM t VISUALISE x, y DRAW point",
+        session,
+        engine=None,
+    )
+    assert result["metadata"]["truncated"] is False

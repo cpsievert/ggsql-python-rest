@@ -137,3 +137,36 @@ def test_get_remote_single_table_schema_not_found():
 
     schema = get_remote_single_table_schema(engine, "test_db", "nonexistent", include_stats=False)
     assert schema is None
+
+
+def test_get_remote_single_table_schema_batched_stats():
+    """Stats should work correctly with batched queries (multiple numeric + text columns)."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE multi (a INTEGER, b REAL, c TEXT, d INTEGER)"
+        ))
+        conn.execute(text(
+            "INSERT INTO multi VALUES (1, 10.5, 'x', 100), (2, 20.5, 'y', 200), (3, 30.5, 'x', 300)"
+        ))
+
+    from ggsql_rest._schema import get_remote_single_table_schema
+
+    schema = get_remote_single_table_schema(engine, "db", "multi", include_stats=True)
+    assert schema is not None
+    cols = {c.column_name: c for c in schema.columns}
+
+    # Numeric columns should have min/max
+    assert cols["a"].min_value == "1"
+    assert cols["a"].max_value == "3"
+    assert cols["b"].min_value is not None
+    assert cols["d"].min_value == "100"
+    assert cols["d"].max_value == "300"
+
+    # Text column with <=20 distinct values should have categoricals
+    assert cols["c"].categorical_values is not None
+    assert set(cols["c"].categorical_values) == {"x", "y"}

@@ -101,15 +101,17 @@ def get_remote_single_table_schema(
     if not inspector.has_table(table_name):
         return None
 
-    columns: list[ColumnSchema] = []
-    for col_info in inspector.get_columns(table_name):
+    col_infos = inspector.get_columns(table_name)
+    batch_stats: dict[str, dict] = {}
+    if include_stats:
+        col_pairs = [(ci["name"], str(ci["type"])) for ci in col_infos]
+        batch_stats = _get_remote_table_stats_batched(engine, table_name, col_pairs)
+
+    columns = []
+    for col_info in col_infos:
         col_name = col_info["name"]
         col_type = str(col_info["type"])
-
-        stats: dict = {}
-        if include_stats:
-            stats = _get_remote_column_stats(engine, table_name, col_name, col_type)
-
+        stats = batch_stats.get(col_name, {})
         columns.append(
             ColumnSchema(
                 column_name=col_name,
@@ -135,18 +137,17 @@ def get_remote_table_schemas(
     tables: list[TableSchema] = []
 
     for table_name in inspector.get_table_names():
-        columns: list[ColumnSchema] = []
+        col_infos = inspector.get_columns(table_name)
+        batch_stats: dict[str, dict] = {}
+        if include_stats:
+            col_pairs = [(ci["name"], str(ci["type"])) for ci in col_infos]
+            batch_stats = _get_remote_table_stats_batched(engine, table_name, col_pairs)
 
-        for col_info in inspector.get_columns(table_name):
+        columns = []
+        for col_info in col_infos:
             col_name = col_info["name"]
             col_type = str(col_info["type"])
-
-            stats: dict = {}
-            if include_stats:
-                stats = _get_remote_column_stats(
-                    engine, table_name, col_name, col_type
-                )
-
+            stats = batch_stats.get(col_name, {})
             columns.append(
                 ColumnSchema(
                     column_name=col_name,
@@ -178,27 +179,50 @@ def _is_remote_text_type(type_str: str) -> bool:
     return any(kw in upper for kw in ("VARCHAR", "TEXT", "CHAR", "STRING"))
 
 
-def _get_remote_column_stats(
+def _get_remote_table_stats_batched(
     engine: Engine,
     table_name: str,
-    col_name: str,
-    col_type: str,
-) -> dict:
-    """Get column statistics from a remote database."""
-    stats: dict = {}
+    columns: list[tuple[str, str]],  # (col_name, col_type) pairs
+) -> dict[str, dict]:
+    """Get stats for all columns of a table using batched queries.
 
-    with engine.connect() as conn:
-        if _is_remote_numeric_type(col_type):
-            result = conn.execute(
-                text(f'SELECT MIN("{col_name}"), MAX("{col_name}") FROM "{table_name}"')
-            )
+    Returns a dict mapping column_name -> stats dict.
+    Numeric columns are batched into a single MIN/MAX query.
+    Text columns still need individual DISTINCT queries.
+    """
+    stats: dict[str, dict] = {}
+
+    # Batch numeric MIN/MAX into a single query
+    numeric_cols = [
+        (name, typ) for name, typ in columns if _is_remote_numeric_type(typ)
+    ]
+    if numeric_cols:
+        parts = []
+        for col_name, _ in numeric_cols:
+            parts.append(f'MIN("{col_name}") AS "min_{col_name}"')
+            parts.append(f'MAX("{col_name}") AS "max_{col_name}"')
+        sql = f'SELECT {", ".join(parts)} FROM "{table_name}"'
+
+        with engine.connect() as conn:
+            result = conn.execute(text(sql))
             row = result.fetchone()
-            if row and row[0] is not None:
-                stats["min_value"] = str(row[0])
-            if row and row[1] is not None:
-                stats["max_value"] = str(row[1])
+            if row:
+                for col_name, _ in numeric_cols:
+                    col_stats: dict = {}
+                    min_val = row._mapping[f"min_{col_name}"]
+                    max_val = row._mapping[f"max_{col_name}"]
+                    if min_val is not None:
+                        col_stats["min_value"] = str(min_val)
+                    if max_val is not None:
+                        col_stats["max_value"] = str(max_val)
+                    stats[col_name] = col_stats
 
-        elif _is_remote_text_type(col_type):
+    # Categorical columns still need individual queries (DISTINCT per column)
+    text_cols = [
+        (name, typ) for name, typ in columns if _is_remote_text_type(typ)
+    ]
+    for col_name, _ in text_cols:
+        with engine.connect() as conn:
             result = conn.execute(
                 text(
                     f'SELECT DISTINCT "{col_name}" FROM "{table_name}" '
@@ -207,6 +231,8 @@ def _get_remote_column_stats(
             )
             values = [row[0] for row in result.fetchall()]
             if len(values) <= 20:
-                stats["categorical_values"] = sorted(str(v) for v in values)
+                stats[col_name] = {
+                    "categorical_values": sorted(str(v) for v in values)
+                }
 
     return stats

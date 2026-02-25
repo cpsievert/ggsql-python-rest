@@ -342,3 +342,69 @@ def test_execute_sql_passes_timeout(monkeypatch):
     # Should not raise — timeout_seconds is accepted and passed through
     result = execute_sql("SELECT * FROM t", session, engine=engine, timeout_seconds=5)
     assert len(result["rows"]) == 1
+
+
+def test_execute_remote_uses_adbc_when_provided():
+    """execute_remote should use ADBC connection when provided."""
+    from unittest.mock import MagicMock
+
+    pa = pytest.importorskip("pyarrow")
+
+    arrow_table = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+    mock_cursor = MagicMock()
+    mock_cursor.fetch_arrow_table.return_value = arrow_table
+    mock_cursor.description = [("id",), ("name",)]
+
+    mock_adbc_conn = MagicMock()
+    mock_adbc_conn.cursor.return_value = mock_cursor
+
+    mock_engine = MagicMock()
+
+    df = execute_remote(mock_engine, "SELECT * FROM t", adbc_conn=mock_adbc_conn)
+    assert len(df) == 3
+    assert set(df.columns) == {"id", "name"}
+    mock_cursor.execute.assert_called_once()
+    mock_engine.connect.assert_not_called()
+
+
+def test_execute_remote_adbc_with_max_rows():
+    """ADBC path should respect max_rows via SQL LIMIT."""
+    from unittest.mock import MagicMock
+
+    pa = pytest.importorskip("pyarrow")
+
+    arrow_table = pa.table({"id": list(range(11))})
+    mock_cursor = MagicMock()
+    mock_cursor.fetch_arrow_table.return_value = arrow_table
+    mock_cursor.description = [("id",)]
+
+    mock_adbc_conn = MagicMock()
+    mock_adbc_conn.cursor.return_value = mock_cursor
+
+    mock_engine = MagicMock()
+    df = execute_remote(
+        mock_engine, "SELECT * FROM t", max_rows=10, adbc_conn=mock_adbc_conn
+    )
+    assert len(df) == 11  # max_rows + 1 for truncation detection
+    executed_sql = mock_cursor.execute.call_args[0][0]
+    assert "LIMIT" in executed_sql.upper()
+
+
+def test_execute_remote_adbc_fallback_on_error():
+    """If ADBC fails, execute_remote should fall back to SQLAlchemy."""
+    from unittest.mock import MagicMock
+
+    mock_adbc_conn = MagicMock()
+    mock_adbc_conn.cursor.side_effect = Exception("ADBC error")
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (id INTEGER)"))
+        conn.execute(text("INSERT INTO t VALUES (1), (2)"))
+
+    df = execute_remote(engine, "SELECT * FROM t", adbc_conn=mock_adbc_conn)
+    assert len(df) == 2

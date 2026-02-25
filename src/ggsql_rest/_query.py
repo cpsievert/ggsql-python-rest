@@ -141,29 +141,55 @@ def connectorx_supported_url(engine: Engine) -> str | None:
     return url
 
 
+def execute_via_adbc(
+    adbc_conn: Any,
+    sql: str,
+    row_limit: int | None,
+) -> pl.DataFrame:
+    """Arrow-native transfer via ADBC."""
+    if row_limit is not None:
+        sql = f"SELECT * FROM ({sql}) AS _limited LIMIT {row_limit}"
+    cursor = adbc_conn.cursor()
+    cursor.execute(sql)
+    arrow_table = cursor.fetch_arrow_table()
+    result = pl.from_arrow(arrow_table)
+    # PyArrow Table always converts to DataFrame, but pyright doesn't know this
+    assert isinstance(result, pl.DataFrame)
+    return result
+
+
 def execute_remote(
     engine: Engine,
     sql: str,
     max_rows: int | None = None,
     timeout_seconds: int | None = None,
+    adbc_conn: Any | None = None,
 ) -> pl.DataFrame:
     """Execute SQL on remote database, return as Polars DataFrame.
 
-    Uses connectorx for Arrow-native transfer when available and the
-    engine URL is supported, falling back to cursor-based reads otherwise.
+    Tries in order: ADBC (Arrow Flight), connectorx, cursor fallback.
 
     If max_rows is provided, fetches max_rows + 1 rows for truncation detection.
     """
     # Fetch one extra row so callers can detect truncation
     row_limit = max_rows + 1 if max_rows is not None else None
-    cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
 
+    # 1. ADBC path
+    if adbc_conn is not None:
+        try:
+            return execute_via_adbc(adbc_conn, sql, row_limit)
+        except Exception:
+            pass  # Fall through to connectorx
+
+    # 2. ConnectorX path
+    cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
     if cx_url is not None:
         try:
             return execute_via_connectorx(cx_url, sql, row_limit)
         except Exception:
-            pass  # Fall through to cursor path
+            pass  # Fall through to cursor
 
+    # 3. Cursor fallback
     return execute_via_cursor(engine, sql, row_limit, timeout_seconds)
 
 

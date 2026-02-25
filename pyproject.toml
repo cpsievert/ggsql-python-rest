@@ -33,6 +33,9 @@ pins = [
     "posit-sdk>=0.8",
     "pyarrow>=14.0",
 ]
+connectorx = [
+    "connectorx>=0.3",
+]
 
 [tool.hatch.version]
 source = "vcs"

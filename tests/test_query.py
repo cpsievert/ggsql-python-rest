@@ -138,3 +138,90 @@ def test_execute_remote_respects_timeout():
     # but we verify the parameter is accepted and execution completes)
     df = execute_remote(engine, "SELECT * FROM t", timeout_seconds=5)
     assert len(df) == 1
+
+
+def test_execute_remote_with_connectorx():
+    """execute_remote uses connectorx Arrow path when available and URI is supported."""
+    pytest.importorskip("connectorx")
+
+    import tempfile
+    import os
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+
+    file_engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        with file_engine.begin() as conn:
+            conn.execute(text("CREATE TABLE t (id INTEGER, name TEXT)"))
+            conn.execute(text("INSERT INTO t VALUES (1, 'a'), (2, 'b'), (3, 'c')"))
+
+        df = execute_remote(file_engine, "SELECT * FROM t")
+        assert len(df) == 3
+        assert set(df.columns) == {"id", "name"}
+    finally:
+        file_engine.dispose()
+        os.unlink(db_path)
+
+
+def test_execute_remote_connectorx_with_max_rows():
+    """execute_remote with connectorx still respects max_rows via SQL LIMIT."""
+    pytest.importorskip("connectorx")
+
+    import tempfile
+    import os
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+
+    file_engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        with file_engine.begin() as conn:
+            conn.execute(text("CREATE TABLE t (id INTEGER)"))
+            conn.execute(
+                text(
+                    "INSERT INTO t (id) VALUES "
+                    + ", ".join(f"({i})" for i in range(100))
+                )
+            )
+
+        df = execute_remote(file_engine, "SELECT * FROM t", max_rows=10)
+        assert len(df) == 11  # max_rows + 1 for truncation detection
+    finally:
+        file_engine.dispose()
+        os.unlink(db_path)
+
+
+def test_execute_remote_falls_back_without_connectorx(monkeypatch):
+    """execute_remote falls back to cursor when connectorx is unavailable."""
+    monkeypatch.setattr("ggsql_rest._query._HAS_CONNECTORX", False)
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (id INTEGER)"))
+        conn.execute(text("INSERT INTO t VALUES (1), (2), (3)"))
+
+    df = execute_remote(engine, "SELECT * FROM t")
+    assert len(df) == 3
+
+
+def test_execute_remote_falls_back_for_memory_sqlite():
+    """execute_remote falls back to cursor for in-memory SQLite (connectorx can't connect)."""
+    pytest.importorskip("connectorx")
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (id INTEGER)"))
+        conn.execute(text("INSERT INTO t VALUES (1), (2), (3)"))
+
+    # Should still work — falls back to cursor path
+    df = execute_remote(engine, "SELECT * FROM t")
+    assert len(df) == 3

@@ -189,3 +189,65 @@ async def test_sql_accepts_timeout_seconds():
             },
         )
         assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_query_response_includes_truncated():
+    """The /query response metadata should include a truncated field."""
+    app, session_mgr, _ = create_test_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/sessions")
+        session_id = create_resp.json()["data"]["sessionId"]
+
+        response = await client.post(
+            f"/sessions/{session_id}/query",
+            json={
+                "query": "SELECT * FROM (VALUES (1, 2), (3, 4)) AS t(x, y) VISUALISE x, y DRAW point"
+            },
+        )
+        assert response.status_code == 200
+        metadata = response.json()["data"]["metadata"]
+        assert "truncated" in metadata
+        assert metadata["truncated"] is False
+
+
+@pytest.mark.anyio
+async def test_query_with_snowflake_source():
+    """When source resolves to Snowflake, query should work via engine fallback."""
+    from unittest.mock import MagicMock
+    from ggsql_rest._routes._dependencies import get_snowflake_discovery
+
+    app, session_mgr, registry = create_test_app()
+
+    mock_snowflake = MagicMock()
+    mock_snowflake.has_connection.return_value = True
+    mock_snowflake.has_adbc_support.return_value = False
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (x INTEGER, y INTEGER)"))
+        conn.execute(text("INSERT INTO t VALUES (1, 2), (3, 4)"))
+    mock_snowflake.get_engine.return_value = engine
+
+    app.dependency_overrides[get_snowflake_discovery] = lambda: mock_snowflake
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/sessions")
+        session_id = create_resp.json()["data"]["sessionId"]
+
+        response = await client.post(
+            f"/sessions/{session_id}/query",
+            json={
+                "query": "SELECT * FROM t VISUALISE x, y DRAW point",
+                "source": "MY_DB.PUBLIC",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert "spec" in data

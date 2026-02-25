@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import Engine
 
@@ -20,16 +22,25 @@ from ._dependencies import get_registry, get_snowflake_discovery, get_pins_disco
 router = APIRouter(prefix="/sessions/{session_id}", tags=["query"])
 
 
-def resolve_engine(
+def resolve_source(
     source: str,
     request: Request,
     registry: ConnectionRegistry,
     snowflake: SnowflakeDiscovery | None,
-) -> Engine:
+) -> tuple[Engine, Any | None]:
+    """Resolve a source name to (engine, optional_adbc_conn)."""
     if source in registry.list_connections():
-        return registry.get_engine(source, request)
+        return registry.get_engine(source, request), None
     if snowflake is not None and snowflake.has_connection(source, request):
-        return snowflake.get_engine(source, request)
+        engine = snowflake.get_engine(source, request)
+        adbc_conn = None
+        if snowflake.has_adbc_support():
+            user_id = snowflake._extract_user_id(request)
+            connections = snowflake._discovered_connections.get(user_id, {})
+            if source in connections:
+                database, schema = connections[source]
+                adbc_conn = snowflake.create_adbc_connection(request, database, schema)
+        return engine, adbc_conn
     raise KeyError(f"Unknown source: '{source}'")
 
 
@@ -43,13 +54,18 @@ async def query(
     pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict:
     engine = None
+    adbc_conn = None
     if body.source:
         if pins is not None and pins.has_any_pin_for_query(body.query, request):
             pins.load_pins_for_query(body.query, request, session)
         else:
-            engine = resolve_engine(body.source, request, registry, snowflake)
+            engine, adbc_conn = resolve_source(
+                body.source, request, registry, snowflake
+            )
 
-    result = execute_ggsql(body.query, session, engine, max_rows=body.max_rows)
+    result = execute_ggsql(
+        body.query, session, engine, max_rows=body.max_rows, adbc_conn=adbc_conn
+    )
 
     return success_envelope(
         QueryResponse(
@@ -69,14 +85,21 @@ async def sql(
     pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict:
     engine = None
+    adbc_conn = None
     if body.source:
         if pins is not None and pins.has_any_pin_for_query(body.query, request):
             pins.load_pins_for_query(body.query, request, session)
         else:
-            engine = resolve_engine(body.source, request, registry, snowflake)
+            engine, adbc_conn = resolve_source(
+                body.source, request, registry, snowflake
+            )
 
     result = execute_sql(
-        body.query, session, engine, timeout_seconds=body.timeout_seconds
+        body.query,
+        session,
+        engine,
+        timeout_seconds=body.timeout_seconds,
+        adbc_conn=adbc_conn,
     )
 
     return success_envelope(SqlResponse(**result))

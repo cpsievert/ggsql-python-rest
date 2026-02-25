@@ -133,6 +133,7 @@ def execute_ggsql(
     session: Session,
     engine: Engine | None = None,
     max_rows: int | None = None,
+    adbc_conn: Any | None = None,
 ) -> dict[str, Any]:
     """Execute a ggsql query with hybrid local/remote approach.
 
@@ -165,7 +166,12 @@ def execute_ggsql(
         )
         table_name = f"__remote_result_{uuid.uuid4().hex[:8]}__"
         truncated = fetch_remote_into_duckdb(
-            engine, sql_portion, session, table_name, effective_max_rows
+            engine,
+            sql_portion,
+            session,
+            table_name,
+            effective_max_rows,
+            adbc_conn=adbc_conn,
         )
         local_query = f"SELECT * FROM {table_name} {validated.visual()}"
     else:
@@ -299,10 +305,15 @@ def execute_sql(
     engine: Engine | None = None,
     max_rows: int = 10000,
     timeout_seconds: int | None = None,
+    adbc_conn: Any | None = None,
 ) -> dict[str, Any]:
     if engine is not None:
         df = execute_remote(
-            engine, query, max_rows=max_rows, timeout_seconds=timeout_seconds
+            engine,
+            query,
+            max_rows=max_rows,
+            timeout_seconds=timeout_seconds,
+            adbc_conn=adbc_conn,
         )
     else:
         df = session.duckdb.execute_sql(query)

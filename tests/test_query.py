@@ -88,3 +88,30 @@ def test_execute_sql_remote_no_truncation_when_under_limit():
     assert result["truncated"] is False
     assert len(result["rows"]) == 3
     assert result["row_count"] == 3
+
+
+def test_execute_ggsql_remote_limits_rows():
+    """execute_ggsql with engine should cap the number of rows fetched remotely."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE big (x INTEGER, y INTEGER)"))
+        conn.execute(text(
+            "INSERT INTO big (x, y) VALUES " +
+            ", ".join(f"({i}, {i*2})" for i in range(500))
+        ))
+
+    session = Session("test", timeout_mins=30)
+
+    result = execute_ggsql(
+        "SELECT * FROM big VISUALISE x, y DRAW point",
+        session,
+        engine=engine,
+        max_rows=50,
+    )
+
+    # Should have at most 50 rows in the visualization
+    assert result["metadata"]["rows"] <= 50

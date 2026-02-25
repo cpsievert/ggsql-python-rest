@@ -31,6 +31,7 @@ class QueryRequest(CamelModel):
 
     query: str
     source: str | None = None
+    max_rows: int | None = None
 
 
 class SqlRequest(CamelModel):

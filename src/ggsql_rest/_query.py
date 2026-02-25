@@ -16,6 +16,7 @@ def execute_ggsql(
     query: str,
     session: Session,
     engine: Engine | None = None,
+    max_rows: int | None = None,
 ) -> dict[str, Any]:
     """
     Execute a ggsql query with hybrid approach.
@@ -23,6 +24,12 @@ def execute_ggsql(
     If engine is provided, SQL portion runs on remote database,
     result is registered in session's DuckDB, and VISUALISE
     portion runs locally.
+
+    Args:
+        query: The ggsql query to execute
+        session: Session containing the DuckDB instance
+        engine: Optional remote database engine
+        max_rows: Optional row limit for remote queries
     """
     validated = validate(query)
 
@@ -44,7 +51,12 @@ def execute_ggsql(
 
     if engine is not None and sql_portion.strip():
         # Execute SQL on remote database
-        df = execute_remote(engine, sql_portion)
+        df = execute_remote(engine, sql_portion, max_rows=max_rows)
+
+        # If max_rows specified, truncate to exactly max_rows
+        # (execute_remote fetches max_rows + 1 for truncation detection)
+        if max_rows is not None and len(df) > max_rows:
+            df = df.head(max_rows)
 
         # Register result in session's DuckDB
         table_name = f"__remote_result_{uuid.uuid4().hex[:8]}__"

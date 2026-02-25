@@ -53,7 +53,7 @@ async def query(
         else:
             engine = _resolve_engine(body.source, request, registry, snowflake)
 
-    result = execute_ggsql(body.query, session, engine)
+    result = execute_ggsql(body.query, session, engine, max_rows=body.max_rows)
 
     return success_envelope(
         QueryResponse(

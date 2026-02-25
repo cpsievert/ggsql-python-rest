@@ -139,3 +139,14 @@ def test_schema_response():
     assert len(dumped["tables"]) == 1
     assert dumped["tables"][0]["tableName"] == "t1"
     assert dumped["tables"][0]["source"] is None
+
+
+def test_query_metadata_includes_truncated():
+    """QueryMetadata should serialize truncated field as camelCase."""
+    meta = QueryMetadata(rows=10, columns=["x"], layers=1, truncated=True)
+    dumped = meta.model_dump(by_alias=True)
+    assert dumped["truncated"] is True
+
+    meta_default = QueryMetadata(rows=10, columns=["x"], layers=1)
+    dumped_default = meta_default.model_dump(by_alias=True)
+    assert dumped_default["truncated"] is False

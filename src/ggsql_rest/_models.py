@@ -45,6 +45,7 @@ class QueryMetadata(CamelModel):
     rows: int
     columns: list[str]
     layers: int
+    truncated: bool = False
 
 
 class QueryResponse(CamelModel):

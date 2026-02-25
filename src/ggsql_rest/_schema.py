@@ -87,6 +87,44 @@ def get_remote_table_names(engine: Engine) -> list[str]:
     return inspector.get_table_names()
 
 
+def get_remote_single_table_schema(
+    engine: Engine,
+    source_name: str,
+    table_name: str,
+    include_stats: bool,
+) -> TableSchema | None:
+    """Extract schema for a single table in a remote database.
+
+    Returns None if the table doesn't exist.
+    """
+    inspector = sa_inspect(engine)
+    if not inspector.has_table(table_name):
+        return None
+
+    columns: list[ColumnSchema] = []
+    for col_info in inspector.get_columns(table_name):
+        col_name = col_info["name"]
+        col_type = str(col_info["type"])
+
+        stats: dict = {}
+        if include_stats:
+            stats = _get_remote_column_stats(engine, table_name, col_name, col_type)
+
+        columns.append(
+            ColumnSchema(
+                column_name=col_name,
+                data_type=col_type,
+                **stats,
+            )
+        )
+
+    return TableSchema(
+        table_name=table_name,
+        source=source_name,
+        columns=columns,
+    )
+
+
 def get_remote_table_schemas(
     engine: Engine,
     source_name: str,

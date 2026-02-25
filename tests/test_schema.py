@@ -114,3 +114,26 @@ def test_get_remote_table_schemas_with_stats():
     region_col = next(c for c in table.columns if c.column_name == "region")
     assert region_col.categorical_values is not None
     assert set(region_col.categorical_values) == {"North", "South"}
+
+
+def test_get_remote_single_table_schema():
+    """get_remote_single_table_schema fetches only the requested table."""
+    engine = _make_sqlite_engine()  # has "sales" table
+
+    from ggsql_rest._schema import get_remote_single_table_schema
+
+    schema = get_remote_single_table_schema(engine, "test_db", "sales", include_stats=False)
+    assert schema is not None
+    assert schema.table_name == "sales"
+    assert schema.source == "test_db"
+    assert len(schema.columns) == 3
+
+
+def test_get_remote_single_table_schema_not_found():
+    """get_remote_single_table_schema returns None for missing table."""
+    engine = _make_sqlite_engine()
+
+    from ggsql_rest._schema import get_remote_single_table_schema
+
+    schema = get_remote_single_table_schema(engine, "test_db", "nonexistent", include_stats=False)
+    assert schema is None

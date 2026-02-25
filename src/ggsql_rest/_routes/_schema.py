@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from .._connections import ConnectionRegistry
 from .._models import ColumnSchema, SchemaResponse, TableNameEntry, TableNamesResponse, TableSchema, success_envelope
-from .._schema import get_local_table_schema, get_remote_table_names, get_remote_table_schemas
+from .._schema import get_local_table_schema, get_remote_single_table_schema, get_remote_table_names, get_remote_table_schemas
 from .._sessions import Session
 from .._snowflake import SnowflakeDiscovery
 from .._pins import PinsDiscovery
@@ -145,12 +145,8 @@ async def schema_table(
     # Remote table from ConnectionRegistry
     elif registry.has_connection(source):
         engine = registry.get_engine(source, request)
-        remote_tables = get_remote_table_schemas(engine, source, include_stats)
-        # Filter to requested table
-        matching = [t for t in remote_tables if t.table_name == table_name]
-        if matching:
-            table_schema = matching[0]
-        else:
+        table_schema = get_remote_single_table_schema(engine, source, table_name, include_stats)
+        if table_schema is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"Table '{table_name}' not found in source '{source}'"

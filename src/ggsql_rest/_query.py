@@ -27,21 +27,20 @@ def _fetch_remote_into_duckdb(
     """Fetch remote SQL results and register them in session's DuckDB.
 
     When connectorx is available, fetches as a single Arrow DataFrame (zero-copy).
-    Otherwise, streams partitions via server-side cursor to bound memory usage.
+    Otherwise, streams chunks via server-side cursor to bound memory usage.
     """
     cx_url = _connectorx_supported_url(engine) if _HAS_CONNECTORX else None
 
     if cx_url is not None:
         try:
             df = _execute_via_connectorx(cx_url, sql, max_rows)
-            if max_rows is not None and len(df) > max_rows:
-                df = df.head(max_rows)
             session.duckdb.register(table_name, df)
             return
         except Exception:
             pass  # Fall through to cursor streaming path
 
-    # Cursor path: stream partitions into DuckDB to bound memory
+    # Cursor path: stream chunks into DuckDB to bound memory
+    batch_size = 10_000
     with engine.connect() as conn:
         conn = conn.execution_options(stream_results=True)
         result = conn.execute(text(sql))
@@ -50,17 +49,20 @@ def _fetch_remote_into_duckdb(
         created = False
         total_rows = 0
 
-        for partition in result.partitions(10_000):
-            if max_rows is not None and total_rows >= max_rows:
+        while True:
+            if max_rows is not None:
+                fetch_size = min(batch_size, max_rows - total_rows)
+                if fetch_size <= 0:
+                    break
+            else:
+                fetch_size = batch_size
+
+            rows = result.fetchmany(fetch_size)
+            if not rows:
                 break
 
-            data = {col: [row[i] for row in partition] for i, col in enumerate(columns)}
+            data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
             chunk_df = pl.DataFrame(data)
-
-            if max_rows is not None:
-                remaining = max_rows - total_rows
-                if len(chunk_df) > remaining:
-                    chunk_df = chunk_df.head(remaining)
 
             if not created:
                 session.duckdb.register(table_name, chunk_df)
@@ -156,39 +158,43 @@ def execute_remote(
 
     Uses connectorx for Arrow-native transfer when available and the
     engine URL is supported, falling back to cursor-based reads otherwise.
+
+    If max_rows is provided, fetches max_rows + 1 rows for truncation detection.
     """
+    # Fetch one extra row so callers can detect truncation
+    row_limit = max_rows + 1 if max_rows is not None else None
     cx_url = _connectorx_supported_url(engine) if _HAS_CONNECTORX else None
 
     if cx_url is not None:
         try:
-            return _execute_via_connectorx(cx_url, sql, max_rows)
+            return _execute_via_connectorx(cx_url, sql, row_limit)
         except Exception:
             pass  # Fall through to cursor path
 
-    return _execute_via_cursor(engine, sql, max_rows, timeout_seconds)
+    return _execute_via_cursor(engine, sql, row_limit, timeout_seconds)
 
 
 def _execute_via_connectorx(
     url: str,
     sql: str,
-    max_rows: int | None,
+    row_limit: int | None,
 ) -> pl.DataFrame:
     """Fast path: Arrow-native transfer via connectorx."""
-    if max_rows is not None:
-        sql = f"SELECT * FROM ({sql}) AS _limited LIMIT {max_rows + 1}"
+    if row_limit is not None:
+        sql = f"SELECT * FROM ({sql}) AS _limited LIMIT {row_limit}"
     return pl.read_database_uri(sql, url, engine="connectorx")
 
 
 def _execute_via_cursor(
     engine: Engine,
     sql: str,
-    max_rows: int | None,
+    row_limit: int | None,
     timeout_seconds: int | None,
 ) -> pl.DataFrame:
     """Fallback: cursor-based read via SQLAlchemy."""
     with engine.connect() as conn:
         opts: dict[str, Any] = {}
-        if max_rows is not None:
+        if row_limit is not None:
             opts["stream_results"] = True
         if timeout_seconds is not None:
             opts["timeout"] = timeout_seconds
@@ -198,8 +204,8 @@ def _execute_via_cursor(
         result = conn.execute(text(sql))
         columns = list(result.keys())
 
-        if max_rows is not None:
-            rows = result.fetchmany(max_rows + 1)
+        if row_limit is not None:
+            rows = result.fetchmany(row_limit)
         else:
             rows = result.fetchall()
 

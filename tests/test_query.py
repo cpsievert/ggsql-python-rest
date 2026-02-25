@@ -4,7 +4,12 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 from ggsql_rest._sessions import Session
-from ggsql_rest._query import execute_ggsql, execute_sql, execute_remote
+from ggsql_rest._query import (
+    execute_ggsql,
+    execute_sql,
+    execute_remote,
+    fetch_remote_into_duckdb,
+)
 
 
 def test_execute_ggsql_local():
@@ -279,3 +284,56 @@ def test_execute_ggsql_streams_empty_remote_result():
         # If ggsql can't visualize empty data, that's a ggsql issue, not ours.
         # The important thing is we didn't crash in _fetch_remote_into_duckdb.
         pass
+
+
+def test_fetch_remote_into_duckdb_pushes_limit_to_db(monkeypatch):
+    """fetch_remote_into_duckdb should inject LIMIT into the SQL sent to the remote DB."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE big (x INTEGER, y INTEGER)"))
+        conn.execute(
+            text(
+                "INSERT INTO big (x, y) VALUES "
+                + ", ".join(f"({i}, {i * 2})" for i in range(200))
+            )
+        )
+
+    # Disable connectorx to force cursor path
+    monkeypatch.setattr("ggsql_rest._query.HAS_CONNECTORX", False)
+
+    # Capture the SQL that gets executed
+    executed_sqls: list[str] = []
+    original_connect = engine.connect
+
+    from contextlib import contextmanager
+    from unittest.mock import patch
+
+    @contextmanager
+    def spy_connect():
+        conn = original_connect()
+        original_conn_execute = conn.execute
+
+        def spy_execute(stmt, *args, **kwargs):
+            executed_sqls.append(str(stmt))
+            return original_conn_execute(stmt, *args, **kwargs)
+
+        conn.execute = spy_execute
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    with patch.object(engine, "connect", spy_connect):
+        session = Session("test", timeout_mins=30)
+        fetch_remote_into_duckdb(
+            engine, "SELECT * FROM big", session, "test_table", max_rows=50
+        )
+
+    # The SQL sent to the DB should contain a LIMIT clause
+    assert any("LIMIT" in sql.upper() for sql in executed_sqls), (
+        f"Expected LIMIT in SQL, got: {executed_sqls}"
+    )

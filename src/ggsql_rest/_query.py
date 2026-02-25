@@ -29,11 +29,14 @@ def fetch_remote_into_duckdb(
     When connectorx is available, fetches as a single Arrow DataFrame (zero-copy).
     Otherwise, streams chunks via server-side cursor to bound memory usage.
     """
+    if max_rows is not None:
+        sql = f"SELECT * FROM ({sql}) AS _limited LIMIT {max_rows}"
+
     cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
 
     if cx_url is not None:
         try:
-            df = execute_via_connectorx(cx_url, sql, max_rows)
+            df = execute_via_connectorx(cx_url, sql, max_rows=None)
             session.duckdb.register(table_name, df)
             return
         except Exception:
@@ -47,17 +50,9 @@ def fetch_remote_into_duckdb(
         columns = list(result.keys())
 
         created = False
-        total_rows = 0
 
         while True:
-            if max_rows is not None:
-                fetch_size = min(batch_size, max_rows - total_rows)
-                if fetch_size <= 0:
-                    break
-            else:
-                fetch_size = batch_size
-
-            rows = result.fetchmany(fetch_size)
+            rows = result.fetchmany(batch_size)
             if not rows:
                 break
 
@@ -72,8 +67,6 @@ def fetch_remote_into_duckdb(
                 session.duckdb.execute_sql(
                     f'INSERT INTO "{table_name}" SELECT * FROM __chunk__'
                 )
-
-            total_rows += len(chunk_df)
 
         if not created:
             # Empty result — register empty DataFrame with correct columns

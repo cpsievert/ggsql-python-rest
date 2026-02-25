@@ -1,5 +1,3 @@
-"""Schema introspection route."""
-
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -34,27 +32,23 @@ async def schema_tables(
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
     pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> StreamingResponse:
-    """Return table names for all available tables (local + remote) without columns.
+    """Stream table names (NDJSON) for all sources.
 
-    Always returns NDJSON format (application/x-ndjson).
-    Discovery order: local DuckDB → registered connections → pins → snowflake
+    Discovery order: local DuckDB -> registered connections -> pins -> snowflake
     """
 
-    def _yield_batch(entries: list[TableNameEntry]):
-        """Yield a sorted NDJSON line for a batch of table entries."""
+    def sort_and_dump(entries: list[TableNameEntry]):
         entries.sort(key=lambda e: e.table_name)
         return json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
 
     def generate():
-        # Local DuckDB tables (instant, sorted)
         local_tables = [
             TableNameEntry(table_name=name, source=None)
             for name in session.tables
         ]
         if local_tables:
-            yield _yield_batch(local_tables)
+            yield sort_and_dump(local_tables)
 
-        # Registered connections (one batch per connection, sorted by connection name)
         for conn_name in sorted(registry.list_connections()):
             engine = registry.get_engine(conn_name, request)
             provider = registry.get_provider(conn_name)
@@ -63,25 +57,23 @@ async def schema_tables(
                 for name in get_remote_table_names(engine)
             ]
             if entries:
-                yield _yield_batch(entries)
+                yield sort_and_dump(entries)
 
-        # Pins tables (one batch per owner, pre-sorted by discovery)
         if pins is not None:
             for owner, table_names in pins.stream_table_names(request):
                 entries = [
                     TableNameEntry(table_name=tn, source=owner, provider="pins")
                     for tn in table_names
                 ]
-                yield _yield_batch(entries)
+                yield sort_and_dump(entries)
 
-        # Snowflake tables (one batch per database, pre-sorted by discovery)
         if snowflake is not None:
             for _db_name, batch in snowflake.stream_table_names(request):
                 entries = [
                     TableNameEntry(table_name=tn, source=cn, provider="snowflake")
                     for tn, cn in batch
                 ]
-                yield _yield_batch(entries)
+                yield sort_and_dump(entries)
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
@@ -97,10 +89,8 @@ async def schema_table(
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
     pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict:
-    """Return schema for a single table (local or remote)."""
     table_schema: TableSchema | None = None
 
-    # Local table
     if source is None:
         if table_name in session.tables:
             table_schema = get_local_table_schema(
@@ -111,7 +101,6 @@ async def schema_table(
                 status_code=404, detail=f"Table '{table_name}' not found"
             )
 
-    # Remote table from ConnectionRegistry
     elif registry.has_connection(source):
         engine = registry.get_engine(source, request)
         table_schema = get_remote_single_table_schema(
@@ -123,7 +112,6 @@ async def schema_table(
                 detail=f"Table '{table_name}' not found in source '{source}'",
             )
 
-    # Snowflake table
     elif snowflake is not None and snowflake.has_connection(source, request):
         table_schema = snowflake.get_single_table_schema(request, table_name, source)
         if table_schema is None:
@@ -132,9 +120,7 @@ async def schema_table(
                 detail=f"Table '{table_name}' not found in Snowflake source '{source}'",
             )
 
-    # Pins table (source is the owner name, e.g., "garrick")
     elif pins is not None and pins.has_pin(table_name, request):
-        # Read schema metadata only (no full data download)
         columns = pins.get_pin_schema(table_name, request)
         if columns:
             table_schema = TableSchema(
@@ -152,7 +138,6 @@ async def schema_table(
                 session.duckdb, table_name, include_stats
             )
 
-    # Source not found
     else:
         raise HTTPException(status_code=404, detail=f"Source '{source}' not found")
 

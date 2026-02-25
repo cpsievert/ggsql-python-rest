@@ -1,5 +1,3 @@
-"""FastAPI application factory."""
-
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -28,7 +26,6 @@ def _make_lifespan(
 ):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-        """Application lifespan handler."""
         app.state.registry = registry
         app.state.session_manager = session_manager
         yield
@@ -47,7 +44,6 @@ def create_app(
     snowflake: SnowflakeDiscovery | None = None,
     pins: PinsDiscovery | None = None,
 ) -> FastAPI:
-    """Create and configure the FastAPI application."""
     session_manager = SessionManager(session_timeout_mins, seed_data=seed_data)
 
     app = FastAPI(
@@ -56,7 +52,6 @@ def create_app(
         lifespan=_make_lifespan(registry, session_manager, snowflake, pins),
     )
 
-    # Set up dependency overrides
     from ._routes._dependencies import get_registry, get_snowflake_discovery, get_pins_discovery
     app.dependency_overrides[_sessions.get_session_manager] = lambda: session_manager
     app.dependency_overrides[get_registry] = lambda: registry
@@ -65,7 +60,6 @@ def create_app(
     if pins is not None:
         app.dependency_overrides[get_pins_discovery] = lambda: pins
 
-    # CORS (consumer configurable)
     if cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -74,17 +68,14 @@ def create_app(
             allow_headers=["*"],
         )
 
-    # Register error handlers
     register_error_handlers(app)
 
-    # Create /api/v1 router and register sub-routes
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(_health.router)
     api_v1.include_router(_sessions.router)
     api_v1.include_router(_query.router)
     api_v1.include_router(_schema.router)
 
-    # Mount the versioned API
     app.include_router(api_v1)
 
     return app

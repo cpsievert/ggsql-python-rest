@@ -1,5 +1,3 @@
-"""ggsql REST API server with SQLAlchemy backend support."""
-
 from ._app import create_app
 from ._config import load_connections_from_yaml
 from ._connections import ConnectionRegistry

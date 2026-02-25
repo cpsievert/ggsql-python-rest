@@ -1,11 +1,8 @@
-"""Schema extraction for local DuckDB and remote SQLAlchemy databases."""
-
 from ggsql import DuckDBReader
 from sqlalchemy import Engine, inspect as sa_inspect, text
 
 from ._models import ColumnSchema, TableSchema
 
-# DuckDB type classification
 _NUMERIC_PREFIXES = (
     "INTEGER",
     "BIGINT",
@@ -36,7 +33,6 @@ def get_local_table_schema(
     table_name: str,
     include_stats: bool,
 ) -> TableSchema:
-    """Extract schema for a local DuckDB table."""
     describe_df = duckdb.execute_sql(f'DESCRIBE "{table_name}"')
     columns: list[ColumnSchema] = []
 
@@ -65,7 +61,6 @@ def _get_duckdb_column_stats(
     col_name: str,
     col_type: str,
 ) -> dict:
-    """Get column statistics from DuckDB."""
     stats: dict = {}
 
     if _is_numeric_type(col_type):
@@ -90,7 +85,6 @@ def _get_duckdb_column_stats(
 
 
 def get_remote_table_names(engine: Engine) -> list[str]:
-    """Get table names from a remote database (no column introspection)."""
     inspector = sa_inspect(engine)
     return inspector.get_table_names()
 
@@ -101,10 +95,6 @@ def get_remote_single_table_schema(
     table_name: str,
     include_stats: bool,
 ) -> TableSchema | None:
-    """Extract schema for a single table in a remote database.
-
-    Returns None if the table doesn't exist.
-    """
     inspector = sa_inspect(engine)
     if not inspector.has_table(table_name):
         return None
@@ -140,7 +130,6 @@ def get_remote_table_schemas(
     source_name: str,
     include_stats: bool,
 ) -> list[TableSchema]:
-    """Extract schema for all tables in a remote database."""
     inspector = sa_inspect(engine)
     tables: list[TableSchema] = []
 
@@ -176,7 +165,6 @@ def get_remote_table_schemas(
 
 
 def _is_remote_numeric_type(type_str: str) -> bool:
-    """Check if a SQLAlchemy type string represents a numeric type."""
     upper = type_str.upper()
     return any(
         kw in upper for kw in ("INT", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC", "REAL")
@@ -184,7 +172,6 @@ def _is_remote_numeric_type(type_str: str) -> bool:
 
 
 def _is_remote_text_type(type_str: str) -> bool:
-    """Check if a SQLAlchemy type string represents a text type."""
     upper = type_str.upper()
     return any(kw in upper for kw in ("VARCHAR", "TEXT", "CHAR", "STRING"))
 
@@ -192,17 +179,13 @@ def _is_remote_text_type(type_str: str) -> bool:
 def _get_remote_table_stats_batched(
     engine: Engine,
     table_name: str,
-    columns: list[tuple[str, str]],  # (col_name, col_type) pairs
+    columns: list[tuple[str, str]],
 ) -> dict[str, dict]:
-    """Get stats for all columns of a table using batched queries.
-
-    Returns a dict mapping column_name -> stats dict.
-    Numeric columns are batched into a single MIN/MAX query.
+    """Numeric columns are batched into a single MIN/MAX query.
     Text columns still need individual DISTINCT queries.
     """
     stats: dict[str, dict] = {}
 
-    # Batch numeric MIN/MAX into a single query
     numeric_cols = [
         (name, typ) for name, typ in columns if _is_remote_numeric_type(typ)
     ]
@@ -227,7 +210,6 @@ def _get_remote_table_stats_batched(
                         col_stats["max_value"] = str(max_val)
                     stats[col_name] = col_stats
 
-    # Categorical columns still need individual queries (DISTINCT per column)
     text_cols = [(name, typ) for name, typ in columns if _is_remote_text_type(typ)]
     for col_name, _ in text_cols:
         with engine.connect() as conn:

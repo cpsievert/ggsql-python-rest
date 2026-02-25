@@ -1,5 +1,3 @@
-"""Posit Connect Pins discovery and on-demand loading."""
-
 from __future__ import annotations
 
 import os
@@ -22,10 +20,7 @@ class PinEntry(NamedTuple):
 
 
 class PinsDiscovery:
-    """Discovers and loads Posit Connect pins as DuckDB tables.
-
-    Auth: session token exchange on Connect, CONNECT_API_KEY locally.
-    """
+    """Auth: session token exchange on Connect, CONNECT_API_KEY locally."""
 
     def __init__(self) -> None:
         self._discovered_pins: dict[str, list[PinEntry]] = {}
@@ -95,7 +90,6 @@ class PinsDiscovery:
         request: Request,
         session: Session,
     ) -> None:
-        """Load any pins referenced in the query into the session's DuckDB."""
         api_key = self._resolve_api_key(request)
         self._ensure_discovered(api_key)
 
@@ -110,7 +104,6 @@ class PinsDiscovery:
         request: Request,
         session: Session,
     ) -> None:
-        """Load a pin into DuckDB if not already present."""
         if session_id in self._loaded_pins and table_name in self._loaded_pins[session_id]:
             return
 
@@ -135,7 +128,6 @@ class PinsDiscovery:
         table_name: str,
         request: Request,
     ) -> list[tuple[str, str]]:
-        """Get column schema without loading full data."""
         pin = self._find_pin(table_name, request)
         if pin is None:
             return []
@@ -162,7 +154,6 @@ class PinsDiscovery:
         return any(pin.sanitized in query for pin in self._get_pins(request))
 
     def _get_pins(self, request: Request) -> list[PinEntry]:
-        """Get discovered pins for this viewer, or empty list if unavailable."""
         try:
             api_key = self._resolve_api_key(request)
         except ValueError:
@@ -203,9 +194,6 @@ class PinsDiscovery:
         return api_key
 
 
-# --- Pure helper functions ---
-
-
 def make_board(api_key: str):
     """board_connect(api_key=...) doesn't auto-detect CONNECT_SERVER, so pass both explicitly."""
     from pins import board_connect
@@ -215,7 +203,6 @@ def make_board(api_key: str):
 
 
 def sanitize_pin_name(pin_name: str) -> str:
-    """Convert pin name to a valid DuckDB table name."""
     name = pin_name.replace("/", "__")
     name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
     name = re.sub(r"_{3,}", "__", name)
@@ -224,9 +211,7 @@ def sanitize_pin_name(pin_name: str) -> str:
 
 
 def read_file_schema(path: str) -> list[tuple[str, str]]:
-    """Read column names and types from a tabular file without loading all data.
-
-    Parquet/Arrow: reads metadata only. CSV/TSV: header only.
+    """Parquet/Arrow: reads metadata only. CSV/TSV: header only.
     Returns empty list for unknown formats.
     """
     lower = path.lower()
@@ -258,7 +243,6 @@ def read_file_schema(path: str) -> list[tuple[str, str]]:
 def group_pins_by_owner(
     pins: list[PinEntry],
 ) -> Iterator[tuple[str, list[str]]]:
-    """Group pin entries by owner, yielding ``(owner, [sanitized_name, ...])``."""
     owners: dict[str, list[str]] = {}
     for pin in pins:
         owner = pin.original.split("/")[0] if "/" in pin.original else "unknown"

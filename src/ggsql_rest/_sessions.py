@@ -1,5 +1,3 @@
-"""Session management for isolated DuckDB instances."""
-
 from __future__ import annotations
 
 import uuid
@@ -13,8 +11,6 @@ if TYPE_CHECKING:
 
 
 class Session:
-    """A user session with an isolated DuckDB instance."""
-
     def __init__(self, session_id: str, timeout_mins: int = 30):
         self.id = session_id
         self.created_at = datetime.now(timezone.utc)
@@ -24,17 +20,13 @@ class Session:
         self.tables: list[str] = []
 
     def touch(self) -> None:
-        """Update last accessed time."""
         self.last_accessed = datetime.now(timezone.utc)
 
     def is_expired(self) -> bool:
-        """Check if session has expired."""
         return datetime.now(timezone.utc) - self.last_accessed > self.timeout
 
 
 class SessionManager:
-    """Manages user sessions."""
-
     def __init__(
         self,
         timeout_mins: int = 30,
@@ -45,7 +37,6 @@ class SessionManager:
         self._seed_data = seed_data or []
 
     def create(self) -> Session:
-        """Create a new session, seeded with base tables if configured."""
         self.cleanup_expired()
         session_id = uuid.uuid4().hex
         session = Session(session_id, self._timeout_mins)
@@ -56,7 +47,6 @@ class SessionManager:
         return session
 
     def get(self, session_id: str) -> Session | None:
-        """Get a session by ID, or None if not found or expired."""
         session = self._sessions.get(session_id)
         if session is None:
             return None
@@ -67,20 +57,16 @@ class SessionManager:
         return session
 
     def delete(self, session_id: str) -> bool:
-        """Delete a session. Returns True if deleted, False if not found."""
         return self._sessions.pop(session_id, None) is not None
 
     def cleanup_expired(self) -> None:
-        """Remove all expired sessions."""
         expired = [sid for sid, s in self._sessions.items() if s.is_expired()]
         for sid in expired:
             del self._sessions[sid]
 
 
 def load_seed_data(paths: list[str]) -> list[tuple[str, pl.DataFrame]]:
-    """Load data files into (table_name, DataFrame) pairs for session seeding.
-
-    Supports CSV, Parquet, JSON, JSONL, and NDJSON files.
+    """Supports CSV, Parquet, JSON, JSONL, and NDJSON files.
     Table names are derived from filenames (without extension).
     """
     import re
@@ -104,7 +90,6 @@ def load_seed_data(paths: list[str]) -> list[tuple[str, pl.DataFrame]]:
         else:
             raise ValueError(f"Unsupported file format: {ext}")
 
-        # Derive table name from filename
         name = re.sub(r"[^a-zA-Z0-9_]", "_", p.stem)
         name = re.sub(r"_+", "_", name).strip("_") or "unnamed"
 
@@ -113,10 +98,7 @@ def load_seed_data(paths: list[str]) -> list[tuple[str, pl.DataFrame]]:
 
 
 def make_sample_data() -> list[tuple[str, pl.DataFrame]]:
-    """Create the sample dataset (products, sales, employees).
-
-    Mirrors the Rust ggsql-rest --load-sample-data tables.
-    """
+    """Mirrors the Rust ggsql-rest --load-sample-data tables."""
     import polars as pl  # noqa: PLW0621
 
     products = pl.DataFrame({

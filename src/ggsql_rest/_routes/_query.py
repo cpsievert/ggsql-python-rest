@@ -1,5 +1,3 @@
-"""Query execution routes."""
-
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import Engine
 
@@ -28,7 +26,6 @@ def _resolve_engine(
     registry: ConnectionRegistry,
     snowflake: SnowflakeDiscovery | None,
 ) -> Engine:
-    """Resolve source name to engine via registry or Snowflake discovery."""
     if source in registry.list_connections():
         return registry.get_engine(source, request)
     if snowflake is not None and snowflake.has_connection(source, request):
@@ -45,7 +42,6 @@ async def query(
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
     pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict:
-    """Execute a ggsql query."""
     engine = None
     if body.source:
         if pins is not None and pins.has_any_pin_for_query(body.query, request):
@@ -72,7 +68,6 @@ async def sql(
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
     pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict:
-    """Execute a pure SQL query."""
     engine = None
     if body.source:
         if pins is not None and pins.has_any_pin_for_query(body.query, request):

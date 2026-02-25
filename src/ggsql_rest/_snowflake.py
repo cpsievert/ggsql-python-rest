@@ -1,11 +1,3 @@
-"""Snowflake catalog discovery with per-user OAuth authentication.
-
-Discovers all databases, schemas, and tables a user has access to in Snowflake.
-Supports two auth modes:
-- Connect: OAuth via Posit-Connect-User-Session-Token header
-- Local: ~/.snowflake/connections.toml via SNOWFLAKE_CONNECTION_NAME env var
-"""
-
 from __future__ import annotations
 
 import json
@@ -34,9 +26,7 @@ from ggsql_rest._constants import SESSION_TOKEN_HEADER
 
 
 def _parse_snowflake_type(data_type_json: str) -> str:
-    """Parse Snowflake's JSON data_type string into a readable type name.
-
-    SHOW COLUMNS returns data_type as JSON, e.g.:
+    """SHOW COLUMNS returns data_type as JSON, e.g.:
       {"type":"FIXED","precision":38,"scale":0,"nullable":true}
     """
     try:
@@ -61,15 +51,6 @@ def _parse_snowflake_type(data_type_json: str) -> str:
 
 
 class SnowflakeDiscovery:
-    """Discovers Snowflake catalog and provides per-user engines.
-
-    Args:
-        account: Snowflake account identifier.
-        warehouse: Default warehouse for queries.
-        connection_name: Optional name in ~/.snowflake/connections.toml (local dev).
-        databases: Optional list of database names to discover. If None, discovers all.
-    """
-
     def __init__(
         self,
         account: str,
@@ -82,11 +63,8 @@ class SnowflakeDiscovery:
         self.connection_name = connection_name
         self.databases = databases
 
-        # Per-user caches: user_id -> discovered connections
         self._discovered_connections: dict[str, dict[str, tuple[str, str]]] = {}
-        # Per-user catalog cache: user_id -> list of (conn_name, db, schema, table_name)
         self._discovered_catalog: dict[str, list[tuple[str, str, str, str]]] = {}
-        # Engine cache: (user_id, connection_name) -> Engine
         self._engines: OrderedDict[tuple[str, str], Engine] = OrderedDict()
         self._max_engines = 50
 
@@ -96,9 +74,7 @@ class SnowflakeDiscovery:
         database: str | None = None,
         schema: str | None = None,
     ) -> SnowflakeConnection:
-        """Create a Snowflake connection for the requesting user.
-
-        On Connect: uses OAuth via Posit-Connect-User-Session-Token header.
+        """On Connect: uses OAuth via Posit-Connect-User-Session-Token header.
         Locally: uses connection_name from ~/.snowflake/connections.toml.
         """
         kwargs: dict = {"warehouse": self.warehouse}
@@ -110,7 +86,6 @@ class SnowflakeDiscovery:
         session_token = request.headers.get(SESSION_TOKEN_HEADER)
 
         if session_token:
-            # Connect mode: OAuth token exchange
             if PositAuthenticator is None:
                 raise ImportError(
                     "posit-sdk is required for Connect OAuth. "
@@ -124,7 +99,6 @@ class SnowflakeDiscovery:
             kwargs["authenticator"] = auth.authenticator
             kwargs["token"] = auth.token
         elif self.connection_name:
-            # Local mode: connections.toml
             kwargs["connection_name"] = self.connection_name
         else:
             raise ValueError(
@@ -139,9 +113,7 @@ class SnowflakeDiscovery:
         self,
         conn: SnowflakeConnection,
     ) -> Iterator[tuple[str, list[tuple[str, str, str, str]]]]:
-        """Discover tables database-by-database, yielding after each.
-
-        Yields (database_name, entries) tuples where entries are
+        """Yields (database_name, entries) where entries are
         (connection_name, database, schema, table_name) tuples.
         """
         cursor = conn.cursor()
@@ -173,7 +145,6 @@ class SnowflakeDiscovery:
                 yield db_name, db_entries
 
     def _extract_user_id(self, request: Request) -> str:
-        """Extract user ID from request headers."""
         return request.headers.get("x-user-id", "anonymous")
 
     def _create_engine(
@@ -182,7 +153,6 @@ class SnowflakeDiscovery:
         database: str,
         schema: str,
     ) -> Engine:
-        """Create a SQLAlchemy engine using snowflake.connector for auth."""
         def creator():
             return self._create_connection(request, database=database, schema=schema)
         return create_engine("snowflake://not@used/db", creator=creator)
@@ -195,20 +165,15 @@ class SnowflakeDiscovery:
         database: str,
         schema: str,
     ) -> Engine:
-        """Get or create a cached engine with LRU eviction."""
         cache_key = (user_id, connection_name)
 
-        # Check if already cached
         if cache_key in self._engines:
-            # Move to end (most recently used)
             self._engines.move_to_end(cache_key)
             return self._engines[cache_key]
 
-        # Create new engine
         engine = self._create_engine(request, database, schema)
         self._engines[cache_key] = engine
 
-        # Evict oldest if cache is full
         if len(self._engines) > self._max_engines:
             _, oldest_engine = self._engines.popitem(last=False)
             oldest_engine.dispose()
@@ -219,16 +184,13 @@ class SnowflakeDiscovery:
         self,
         request: Request,
     ) -> Iterator[tuple[str, list[tuple[str, str]]]]:
-        """Stream table names per-database.
-
-        Yields (database_name, table_entries) tuples where table_entries
+        """Yields (database_name, table_entries) where table_entries
         are (table_name, connection_name) pairs.
 
         Also populates the catalog and connections caches incrementally.
         """
         user_id = self._extract_user_id(request)
 
-        # If already cached, yield everything at once (grouped by database)
         if user_id in self._discovered_catalog:
             catalog_data = self._discovered_catalog[user_id]
             by_db: dict[str, list[tuple[str, str]]] = {}
@@ -257,7 +219,6 @@ class SnowflakeDiscovery:
 
                 yield db_name, batch
 
-            # Cache full catalog after iteration completes
             self._discovered_catalog[user_id] = all_catalog
         finally:
             conn.close()
@@ -267,16 +228,8 @@ class SnowflakeDiscovery:
         connection_name: str,
         request: Request,
     ) -> Engine:
-        """Get engine for a specific connection.
-
-        This is used by the query route.
-
-        Raises:
-            KeyError: If connection_name is not found for this user.
-        """
         user_id = self._extract_user_id(request)
 
-        # Look up connection in user's discovered connections
         if user_id not in self._discovered_connections:
             raise KeyError(f"Connection '{connection_name}' not found")
 
@@ -292,7 +245,6 @@ class SnowflakeDiscovery:
         connection_name: str,
         request: Request,
     ) -> bool:
-        """Check if a connection belongs to this discovery."""
         user_id = self._extract_user_id(request)
         if user_id not in self._discovered_connections:
             return False
@@ -304,18 +256,7 @@ class SnowflakeDiscovery:
         table_name: str,
         connection: str,
     ) -> TableSchema | None:
-        """Get column schema for a single Snowflake table.
-
-        Uses SHOW COLUMNS IN TABLE for targeted introspection.
-
-        Args:
-            request: FastAPI request (for auth).
-            table_name: The table name.
-            connection: Connection name in "DATABASE.SCHEMA" format.
-
-        Returns:
-            TableSchema if found, None if connection or table not found.
-        """
+        """Uses SHOW COLUMNS IN TABLE for targeted introspection."""
         from ._models import ColumnSchema, TableSchema
 
         user_id = self._extract_user_id(request)
@@ -353,7 +294,6 @@ class SnowflakeDiscovery:
             conn.close()
 
     def dispose_all(self) -> None:
-        """Dispose all cached engines and clear caches."""
         for engine in self._engines.values():
             engine.dispose()
         self._engines.clear()

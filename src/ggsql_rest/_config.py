@@ -1,5 +1,3 @@
-"""YAML connection configuration loading."""
-
 from pathlib import Path
 from typing import Any
 
@@ -10,14 +8,6 @@ from ._connections import ConnectionRegistry
 
 
 def _provider_from_url(url: str) -> str | None:
-    """Extract database provider name from a SQLAlchemy URL scheme.
-
-    Args:
-        url: SQLAlchemy URL (e.g., "postgresql+psycopg2://...", "mysql://...")
-
-    Returns:
-        Provider name (e.g., "postgresql", "mysql", "sqlite") or None if not parseable
-    """
     # SQLAlchemy URLs: "dialect+driver://..." or "dialect://..."
     scheme = url.split("://")[0] if "://" in url else None
     if scheme is None:
@@ -27,9 +17,8 @@ def _provider_from_url(url: str) -> str | None:
 
 
 def load_connections_from_yaml(path: str | Path) -> ConnectionRegistry:
-    """Load a ConnectionRegistry from a YAML config file.
+    """Expected format::
 
-    Expected format:
         connections:
           name:
             url: "postgresql://..."

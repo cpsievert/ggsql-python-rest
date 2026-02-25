@@ -1,5 +1,3 @@
-"""CLI entry point for ggsql-rest server."""
-
 import argparse
 import os
 

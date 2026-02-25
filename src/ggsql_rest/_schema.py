@@ -7,8 +7,16 @@ from ._models import ColumnSchema, TableSchema
 
 # DuckDB type classification
 _NUMERIC_PREFIXES = (
-    "INTEGER", "BIGINT", "SMALLINT", "TINYINT", "HUGEINT",
-    "FLOAT", "DOUBLE", "DECIMAL", "REAL", "NUMERIC",
+    "INTEGER",
+    "BIGINT",
+    "SMALLINT",
+    "TINYINT",
+    "HUGEINT",
+    "FLOAT",
+    "DOUBLE",
+    "DECIMAL",
+    "REAL",
+    "NUMERIC",
 )
 _TEXT_PREFIXES = ("VARCHAR", "TEXT", "STRING", "CHAR")
 
@@ -170,7 +178,9 @@ def get_remote_table_schemas(
 def _is_remote_numeric_type(type_str: str) -> bool:
     """Check if a SQLAlchemy type string represents a numeric type."""
     upper = type_str.upper()
-    return any(kw in upper for kw in ("INT", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC", "REAL"))
+    return any(
+        kw in upper for kw in ("INT", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC", "REAL")
+    )
 
 
 def _is_remote_text_type(type_str: str) -> bool:
@@ -218,9 +228,7 @@ def _get_remote_table_stats_batched(
                     stats[col_name] = col_stats
 
     # Categorical columns still need individual queries (DISTINCT per column)
-    text_cols = [
-        (name, typ) for name, typ in columns if _is_remote_text_type(typ)
-    ]
+    text_cols = [(name, typ) for name, typ in columns if _is_remote_text_type(typ)]
     for col_name, _ in text_cols:
         with engine.connect() as conn:
             result = conn.execute(
@@ -231,8 +239,6 @@ def _get_remote_table_stats_batched(
             )
             values = [row[0] for row in result.fetchall()]
             if len(values) <= 20:
-                stats[col_name] = {
-                    "categorical_values": sorted(str(v) for v in values)
-                }
+                stats[col_name] = {"categorical_values": sorted(str(v) for v in values)}
 
     return stats

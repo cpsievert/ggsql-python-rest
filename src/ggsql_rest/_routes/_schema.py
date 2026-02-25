@@ -6,8 +6,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .._connections import ConnectionRegistry
-from .._models import ColumnSchema, SchemaResponse, TableNameEntry, TableNamesResponse, TableSchema, success_envelope
-from .._schema import get_local_table_schema, get_remote_single_table_schema, get_remote_table_names, get_remote_table_schemas
+from .._models import (
+    ColumnSchema,
+    SchemaResponse,
+    TableNameEntry,
+    TableNamesResponse,
+    TableSchema,
+    success_envelope,
+)
+from .._schema import (
+    get_local_table_schema,
+    get_remote_single_table_schema,
+    get_remote_table_names,
+    get_remote_table_schemas,
+)
 from .._sessions import Session
 from .._snowflake import SnowflakeDiscovery
 from .._pins import PinsDiscovery
@@ -41,7 +53,11 @@ async def schema_tables(
         remote_table_names = get_remote_table_names(engine)
         provider = registry.get_provider(conn_name)
         for table_name in remote_table_names:
-            local_tables.append(TableNameEntry(table_name=table_name, source=conn_name, provider=provider))
+            local_tables.append(
+                TableNameEntry(
+                    table_name=table_name, source=conn_name, provider=provider
+                )
+            )
 
     if not stream:
         # Original non-streaming path
@@ -49,11 +65,21 @@ async def schema_tables(
         if snowflake is not None and not skip_slow_discovery:
             snowflake_table_names = snowflake.get_table_names(request)
             for table_name, connection_name in snowflake_table_names:
-                tables.append(TableNameEntry(table_name=table_name, source=connection_name, provider="snowflake"))
+                tables.append(
+                    TableNameEntry(
+                        table_name=table_name,
+                        source=connection_name,
+                        provider="snowflake",
+                    )
+                )
         if pins is not None and not skip_slow_discovery:
             for owner, table_names in pins.stream_table_names(request):
                 for table_name in table_names:
-                    tables.append(TableNameEntry(table_name=table_name, source=owner, provider="pins"))
+                    tables.append(
+                        TableNameEntry(
+                            table_name=table_name, source=owner, provider="pins"
+                        )
+                    )
         return success_envelope(TableNamesResponse(tables=tables))
 
     # Streaming path: NDJSON
@@ -100,9 +126,7 @@ async def schema(
 
     # Local tables from session's DuckDB
     for table_name in session.tables:
-        table_schema = get_local_table_schema(
-            session.duckdb, table_name, include_stats
-        )
+        table_schema = get_local_table_schema(session.duckdb, table_name, include_stats)
         tables.append(table_schema)
 
     # Remote tables from each registered connection
@@ -140,27 +164,29 @@ async def schema_table(
                 session.duckdb, table_name, include_stats
             )
         else:
-            raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Table '{table_name}' not found"
+            )
 
     # Remote table from ConnectionRegistry
     elif registry.has_connection(source):
         engine = registry.get_engine(source, request)
-        table_schema = get_remote_single_table_schema(engine, source, table_name, include_stats)
-        if table_schema is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Table '{table_name}' not found in source '{source}'"
-            )
-
-    # Snowflake table
-    elif snowflake is not None and snowflake.has_connection(source, request):
-        table_schema = snowflake.get_single_table_schema(
-            request, table_name, source
+        table_schema = get_remote_single_table_schema(
+            engine, source, table_name, include_stats
         )
         if table_schema is None:
             raise HTTPException(
                 status_code=404,
-                detail=f"Table '{table_name}' not found in Snowflake source '{source}'"
+                detail=f"Table '{table_name}' not found in source '{source}'",
+            )
+
+    # Snowflake table
+    elif snowflake is not None and snowflake.has_connection(source, request):
+        table_schema = snowflake.get_single_table_schema(request, table_name, source)
+        if table_schema is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Table '{table_name}' not found in Snowflake source '{source}'",
             )
 
     # Pins table (source is the owner name, e.g., "garrick")
@@ -185,9 +211,6 @@ async def schema_table(
 
     # Source not found
     else:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Source '{source}' not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Source '{source}' not found")
 
     return success_envelope(table_schema)

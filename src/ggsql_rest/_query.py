@@ -37,8 +37,7 @@ def execute_ggsql(
     # that can cause 500s on remote databases. Semantic errors (e.g., missing
     # aesthetics) are allowed through since the executor may handle them fine.
     parse_errors = [
-        e for e in validated.errors()
-        if e.get("message", "").startswith("Parse error")
+        e for e in validated.errors() if e.get("message", "").startswith("Parse error")
     ]
     if parse_errors:
         messages = "; ".join(e["message"] for e in parse_errors)

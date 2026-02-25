@@ -11,11 +11,13 @@ from ggsql_rest._schema import get_local_table_schema, get_remote_table_schemas
 def _make_session_duckdb_with_table() -> tuple[DuckDBReader, str]:
     """Create a DuckDB instance with a test table."""
     duckdb = DuckDBReader("duckdb://memory")
-    df = pl.DataFrame({
-        "id": [1, 2, 3],
-        "name": ["Alice", "Bob", "Charlie"],
-        "score": [85.5, 92.0, 78.3],
-    })
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "name": ["Alice", "Bob", "Charlie"],
+            "score": [85.5, 92.0, 78.3],
+        }
+    )
     duckdb.register("test_table", df)
     return duckdb, "test_table"
 
@@ -74,12 +76,12 @@ def _make_sqlite_engine():
         poolclass=StaticPool,
     )
     with engine.begin() as conn:
-        conn.execute(text(
-            "CREATE TABLE sales (id INTEGER, region TEXT, revenue REAL)"
-        ))
-        conn.execute(text(
-            "INSERT INTO sales VALUES (1, 'North', 100.0), (2, 'South', 200.0), (3, 'North', 150.0)"
-        ))
+        conn.execute(text("CREATE TABLE sales (id INTEGER, region TEXT, revenue REAL)"))
+        conn.execute(
+            text(
+                "INSERT INTO sales VALUES (1, 'North', 100.0), (2, 'South', 200.0), (3, 'North', 150.0)"
+            )
+        )
     return engine
 
 
@@ -122,7 +124,9 @@ def test_get_remote_single_table_schema():
 
     from ggsql_rest._schema import get_remote_single_table_schema
 
-    schema = get_remote_single_table_schema(engine, "test_db", "sales", include_stats=False)
+    schema = get_remote_single_table_schema(
+        engine, "test_db", "sales", include_stats=False
+    )
     assert schema is not None
     assert schema.table_name == "sales"
     assert schema.source == "test_db"
@@ -135,7 +139,9 @@ def test_get_remote_single_table_schema_not_found():
 
     from ggsql_rest._schema import get_remote_single_table_schema
 
-    schema = get_remote_single_table_schema(engine, "test_db", "nonexistent", include_stats=False)
+    schema = get_remote_single_table_schema(
+        engine, "test_db", "nonexistent", include_stats=False
+    )
     assert schema is None
 
 
@@ -147,12 +153,12 @@ def test_get_remote_single_table_schema_batched_stats():
         poolclass=StaticPool,
     )
     with engine.begin() as conn:
-        conn.execute(text(
-            "CREATE TABLE multi (a INTEGER, b REAL, c TEXT, d INTEGER)"
-        ))
-        conn.execute(text(
-            "INSERT INTO multi VALUES (1, 10.5, 'x', 100), (2, 20.5, 'y', 200), (3, 30.5, 'x', 300)"
-        ))
+        conn.execute(text("CREATE TABLE multi (a INTEGER, b REAL, c TEXT, d INTEGER)"))
+        conn.execute(
+            text(
+                "INSERT INTO multi VALUES (1, 10.5, 'x', 100), (2, 20.5, 'y', 200), (3, 30.5, 'x', 300)"
+            )
+        )
 
     from ggsql_rest._schema import get_remote_single_table_schema
 

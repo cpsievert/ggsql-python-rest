@@ -59,16 +59,20 @@ def test_execute_sql_remote_pushes_limit():
     )
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE big (id INTEGER)"))
-        conn.execute(text(
-            "INSERT INTO big (id) VALUES " + ", ".join(f"({i})" for i in range(100))
-        ))
+        conn.execute(
+            text(
+                "INSERT INTO big (id) VALUES " + ", ".join(f"({i})" for i in range(100))
+            )
+        )
 
     session = Session("test", timeout_mins=30)
     result = execute_sql("SELECT * FROM big", session, engine=engine, max_rows=10)
 
     assert result["truncated"] is True
     assert len(result["rows"]) == 10
-    assert result["row_count"] == 10  # we only know we fetched max_rows; true count unknown
+    assert (
+        result["row_count"] == 10
+    )  # we only know we fetched max_rows; true count unknown
 
 
 def test_execute_sql_remote_no_truncation_when_under_limit():
@@ -99,10 +103,12 @@ def test_execute_ggsql_remote_limits_rows():
     )
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE big (x INTEGER, y INTEGER)"))
-        conn.execute(text(
-            "INSERT INTO big (x, y) VALUES " +
-            ", ".join(f"({i}, {i*2})" for i in range(500))
-        ))
+        conn.execute(
+            text(
+                "INSERT INTO big (x, y) VALUES "
+                + ", ".join(f"({i}, {i * 2})" for i in range(500))
+            )
+        )
 
     session = Session("test", timeout_mins=30)
 

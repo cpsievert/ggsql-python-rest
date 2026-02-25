@@ -65,22 +65,18 @@ async def schema_tables(
             if entries:
                 yield _yield_batch(entries)
 
-        # Pins tables (one batch per owner, sorted by owner)
+        # Pins tables (one batch per owner, pre-sorted by discovery)
         if pins is not None:
-            pin_batches = list(pins.stream_table_names(request))
-            pin_batches.sort(key=lambda x: x[0])
-            for owner, table_names in pin_batches:
+            for owner, table_names in pins.stream_table_names(request):
                 entries = [
                     TableNameEntry(table_name=tn, source=owner, provider="pins")
                     for tn in table_names
                 ]
                 yield _yield_batch(entries)
 
-        # Snowflake tables (one batch per database, sorted by database name)
+        # Snowflake tables (one batch per database, pre-sorted by discovery)
         if snowflake is not None:
-            sf_batches = list(snowflake.stream_table_names(request))
-            sf_batches.sort(key=lambda x: x[0])
-            for _db_name, batch in sf_batches:
+            for _db_name, batch in snowflake.stream_table_names(request):
                 entries = [
                     TableNameEntry(table_name=tn, source=cn, provider="snowflake")
                     for tn, cn in batch

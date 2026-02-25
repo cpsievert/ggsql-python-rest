@@ -135,7 +135,6 @@ class SnowflakeDiscovery:
 
         return snowflake_connector.connect(**kwargs)
 
-
     def _discover_catalog_by_database(
         self,
         conn: SnowflakeConnection,
@@ -153,7 +152,7 @@ class SnowflakeDiscovery:
             cursor.execute("SHOW DATABASES")
             db_names = [row[1] for row in cursor.fetchall()]
 
-        for db_name in db_names:
+        for db_name in sorted(db_names):
             db_entries: list[tuple[str, str, str, str]] = []
 
             try:
@@ -172,7 +171,6 @@ class SnowflakeDiscovery:
 
             if db_entries:
                 yield db_name, db_entries
-
 
     def _extract_user_id(self, request: Request) -> str:
         """Extract user ID from request headers."""
@@ -217,7 +215,6 @@ class SnowflakeDiscovery:
 
         return engine
 
-
     def stream_table_names(
         self,
         request: Request,
@@ -237,7 +234,7 @@ class SnowflakeDiscovery:
             by_db: dict[str, list[tuple[str, str]]] = {}
             for conn_name, database, _schema, table_name in catalog_data:
                 by_db.setdefault(database, []).append((table_name, conn_name))
-            for db_name, entries in by_db.items():
+            for db_name, entries in sorted(by_db.items()):
                 yield db_name, entries
             return
 
@@ -264,7 +261,6 @@ class SnowflakeDiscovery:
             self._discovered_catalog[user_id] = all_catalog
         finally:
             conn.close()
-
 
     def get_engine(
         self,

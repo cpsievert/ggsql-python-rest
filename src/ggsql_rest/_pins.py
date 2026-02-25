@@ -73,7 +73,7 @@ class PinsDiscovery:
 
         self._discovered_pins[api_key] = []
 
-        for owner_guid, items in by_owner.items():
+        for owner_guid, items in sorted(by_owner.items(), key=lambda x: user_map.get(x[0], "unknown")):
             owner = user_map.get(owner_guid, "unknown")
             table_names: list[str] = []
             for p in items:
@@ -264,4 +264,4 @@ def group_pins_by_owner(
         owner = pin.original.split("/")[0] if "/" in pin.original else "unknown"
         owners.setdefault(owner, []).append(pin.sanitized)
 
-    yield from owners.items()
+    yield from sorted(owners.items())

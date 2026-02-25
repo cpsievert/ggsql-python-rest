@@ -466,3 +466,54 @@ class TestStreamTableNames:
         assert db_name == "DB1"
         assert len(tables) == 1
         assert ("USERS", "DB1.PUBLIC") in tables
+
+
+class TestAdbcSupport:
+    """Tests for ADBC Arrow Flight query path."""
+
+    def test_build_adbc_params_oauth(self):
+        """_build_adbc_params produces correct OAuth options."""
+        discovery = SnowflakeDiscovery(
+            account="test_account",
+            warehouse="test_wh",
+        )
+
+        params = discovery._build_adbc_params(
+            token="oauth_token_123",
+            database="MY_DB",
+            schema="PUBLIC",
+        )
+
+        assert params is not None
+        assert params["adbc.snowflake.sql.account"] == "test_account"
+        assert params["adbc.snowflake.sql.warehouse"] == "test_wh"
+        assert params["adbc.snowflake.sql.db"] == "MY_DB"
+        assert params["adbc.snowflake.sql.schema"] == "PUBLIC"
+        assert params["adbc.snowflake.sql.auth_type"] == "auth_oauth"
+        assert params["adbc.snowflake.sql.client_option.auth_token"] == "oauth_token_123"
+
+    def test_build_adbc_params_no_token_returns_none(self):
+        """_build_adbc_params returns None when no OAuth token (local dev)."""
+        discovery = SnowflakeDiscovery(
+            account="test_account",
+            warehouse="test_wh",
+            connection_name="my_local_conn",
+        )
+
+        params = discovery._build_adbc_params(
+            token=None,
+            database="MY_DB",
+            schema="PUBLIC",
+        )
+        assert params is None
+
+    def test_has_adbc_support_reflects_import(self, monkeypatch):
+        """has_adbc_support returns False when ADBC driver is unavailable."""
+        monkeypatch.setattr("ggsql_rest._snowflake._HAS_SNOWFLAKE_ADBC", False)
+
+        discovery = SnowflakeDiscovery(
+            account="test_account",
+            warehouse="test_wh",
+        )
+
+        assert not discovery.has_adbc_support()

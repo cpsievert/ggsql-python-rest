@@ -28,6 +28,11 @@ snowflake = [
     "snowflake-sqlalchemy>=1.6",
     "posit-sdk>=0.8",
 ]
+snowflake-adbc = [
+    "adbc-driver-snowflake>=0.8",
+    "snowflake-connector-python>=3.0",
+    "posit-sdk>=0.8",
+]
 pins = [
     "pins>=0.8",
     "posit-sdk>=0.8",

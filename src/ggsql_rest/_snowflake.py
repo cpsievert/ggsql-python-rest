@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import snowflake.connector as snowflake_connector
 from sqlalchemy import create_engine
@@ -21,6 +21,14 @@ try:
     from posit.connect.external.snowflake import PositAuthenticator
 except ImportError:
     PositAuthenticator = None  # type: ignore[assignment, misc]
+
+try:
+    import adbc_driver_snowflake.dbapi as _snowflake_adbc
+
+    _HAS_SNOWFLAKE_ADBC = True
+except ImportError:
+    _snowflake_adbc = None  # type: ignore[assignment]
+    _HAS_SNOWFLAKE_ADBC = False
 
 from ggsql_rest._constants import SESSION_TOKEN_HEADER
 
@@ -292,6 +300,65 @@ class SnowflakeDiscovery:
             )
         finally:
             conn.close()
+
+    def has_adbc_support(self) -> bool:
+        """Check if ADBC Arrow Flight is available for Snowflake queries."""
+        return _HAS_SNOWFLAKE_ADBC
+
+    def _build_adbc_params(
+        self,
+        token: str | None,
+        database: str,
+        schema: str,
+    ) -> dict[str, str] | None:
+        """Build ADBC connection parameters for Snowflake.
+
+        Returns None if ADBC auth is not supported for the current auth mode
+        (e.g., local dev using connections.toml).
+        """
+        if token is None:
+            return None
+
+        return {
+            "adbc.snowflake.sql.account": self.account,
+            "adbc.snowflake.sql.warehouse": self.warehouse,
+            "adbc.snowflake.sql.db": database,
+            "adbc.snowflake.sql.schema": schema,
+            "adbc.snowflake.sql.auth_type": "auth_oauth",
+            "adbc.snowflake.sql.client_option.auth_token": token,
+        }
+
+    def create_adbc_connection(
+        self,
+        request: Request,
+        database: str,
+        schema: str,
+    ) -> Any | None:
+        """Create an ADBC connection for Arrow-native Snowflake queries.
+
+        Returns an ADBC DBAPI2 connection, or None if ADBC is unavailable
+        or the auth mode doesn't support it.
+        """
+        if not _HAS_SNOWFLAKE_ADBC or _snowflake_adbc is None:
+            return None
+
+        session_token = request.headers.get(SESSION_TOKEN_HEADER)
+        if session_token:
+            if PositAuthenticator is None:
+                return None
+            auth = PositAuthenticator(
+                local_authenticator="EXTERNALBROWSER",
+                user_session_token=session_token,
+            )
+            token = auth.token
+        else:
+            return None
+
+        params = self._build_adbc_params(token, database, schema)
+        if params is None:
+            return None
+
+        return _snowflake_adbc.connect(db_kwargs=params)
 
     def dispose_all(self) -> None:
         for engine in self._engines.values():

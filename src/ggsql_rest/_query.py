@@ -72,12 +72,21 @@ def execute_ggsql(
     }
 
 
-def execute_remote(engine: Engine, sql: str) -> pl.DataFrame:
-    """Execute SQL on remote database, return as Polars DataFrame."""
+def execute_remote(
+    engine: Engine, sql: str, max_rows: int | None = None
+) -> pl.DataFrame:
+    """Execute SQL on remote database, return as Polars DataFrame.
+
+    If max_rows is provided, fetches at most max_rows + 1 rows to detect truncation.
+    """
     with engine.connect() as conn:
         result = conn.execute(text(sql))
         columns = list(result.keys())
-        rows = result.fetchall()
+
+        if max_rows is not None:
+            rows = result.fetchmany(max_rows + 1)
+        else:
+            rows = result.fetchall()
 
         # Convert to dict of lists for Polars
         data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
@@ -92,7 +101,7 @@ def execute_sql(
 ) -> dict[str, Any]:
     """Execute pure SQL query and return results as JSON."""
     if engine is not None:
-        df = execute_remote(engine, query)
+        df = execute_remote(engine, query, max_rows=max_rows)
     else:
         df = session.duckdb.execute_sql(query)
 
@@ -105,6 +114,6 @@ def execute_sql(
     return {
         "rows": df.to_dicts(),
         "columns": df.columns,
-        "row_count": row_count,
+        "row_count": min(row_count, max_rows),
         "truncated": truncated,
     }

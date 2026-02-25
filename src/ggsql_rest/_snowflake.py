@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
@@ -75,6 +76,8 @@ class SnowflakeDiscovery:
         self._discovered_catalog: dict[str, list[tuple[str, str, str, str]]] = {}
         self._engines: OrderedDict[tuple[str, str], Engine] = OrderedDict()
         self._max_engines = 50
+        self._catalog_cache_times: dict[str, float] = {}
+        self._cache_ttl_seconds: float = 30 * 60  # 30 minutes
 
     def _create_connection(
         self,
@@ -116,6 +119,13 @@ class SnowflakeDiscovery:
             )
 
         return snowflake_connector.connect(**kwargs)
+
+    def _is_cache_stale(self, user_id: str) -> bool:
+        if user_id not in self._catalog_cache_times:
+            return True
+        return (
+            time.monotonic() - self._catalog_cache_times[user_id]
+        ) > self._cache_ttl_seconds
 
     def _discover_catalog_by_database(
         self,
@@ -200,7 +210,7 @@ class SnowflakeDiscovery:
         """
         user_id = self._extract_user_id(request)
 
-        if user_id in self._discovered_catalog:
+        if user_id in self._discovered_catalog and not self._is_cache_stale(user_id):
             catalog_data = self._discovered_catalog[user_id]
             by_db: dict[str, list[tuple[str, str]]] = {}
             for conn_name, database, _schema, table_name in catalog_data:
@@ -229,6 +239,7 @@ class SnowflakeDiscovery:
                 yield db_name, batch
 
             self._discovered_catalog[user_id] = all_catalog
+            self._catalog_cache_times[user_id] = time.monotonic()
         finally:
             conn.close()
 
@@ -369,3 +380,4 @@ class SnowflakeDiscovery:
         self._engines.clear()
         self._discovered_connections.clear()
         self._discovered_catalog.clear()
+        self._catalog_cache_times.clear()

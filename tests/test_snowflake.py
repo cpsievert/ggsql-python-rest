@@ -412,6 +412,8 @@ class TestStreamTableNames:
 
     def test_uses_cache_on_second_call(self):
         """Second call to stream_table_names() uses cache without re-querying."""
+        import time
+
         discovery = SnowflakeDiscovery(
             account="test-account",
             warehouse="TEST_WH",
@@ -429,6 +431,7 @@ class TestStreamTableNames:
             "DB1.PUBLIC": ("DB1", "PUBLIC"),
             "DB2.PUBLIC": ("DB2", "PUBLIC"),
         }
+        discovery._catalog_cache_times["user1"] = time.monotonic()
 
         with patch.object(discovery, "_create_connection") as mock_create:
             results = list(discovery.stream_table_names(request))
@@ -578,6 +581,51 @@ class TestStreamTableNames:
         assert db_name == "DB1"
         assert len(tables) == 1
         assert ("USERS", "DB1.PUBLIC") in tables
+
+
+class TestCatalogCacheTTL:
+    """Tests for catalog cache TTL expiration."""
+
+    def test_catalog_cache_expires_after_ttl(self):
+        """Cached catalog should be considered stale after TTL expires."""
+        import time
+
+        discovery = SnowflakeDiscovery(
+            account="test",
+            warehouse="test_wh",
+            connection_name="test_conn",
+            databases=["DB1"],
+        )
+
+        user_id = "anonymous"
+        discovery._discovered_catalog[user_id] = [
+            ("DB1.PUBLIC", "DB1", "PUBLIC", "old_table")
+        ]
+        discovery._discovered_connections[user_id] = {"DB1.PUBLIC": ("DB1", "PUBLIC")}
+        # Set the cache time to 31 minutes ago
+        discovery._catalog_cache_times[user_id] = time.monotonic() - (31 * 60)
+
+        assert discovery._is_cache_stale(user_id) is True
+
+    def test_catalog_cache_fresh_within_ttl(self):
+        """Cached catalog within TTL should not be stale."""
+        import time
+
+        discovery = SnowflakeDiscovery(
+            account="test",
+            warehouse="test_wh",
+            connection_name="test_conn",
+            databases=["DB1"],
+        )
+
+        user_id = "anonymous"
+        discovery._discovered_catalog[user_id] = [
+            ("DB1.PUBLIC", "DB1", "PUBLIC", "table1")
+        ]
+        discovery._discovered_connections[user_id] = {"DB1.PUBLIC": ("DB1", "PUBLIC")}
+        discovery._catalog_cache_times[user_id] = time.monotonic()
+
+        assert discovery._is_cache_stale(user_id) is False
 
 
 class TestAdbcSupport:

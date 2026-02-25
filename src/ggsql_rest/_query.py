@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from typing import Any
 
@@ -18,6 +19,8 @@ except ImportError:
 
 
 _DEFAULT_GGSQL_MAX_ROWS = 500_000
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_remote_into_duckdb(
@@ -56,7 +59,7 @@ def fetch_remote_into_duckdb(
             session.duckdb.register(table_name, df)
             return truncated
         except Exception:
-            pass  # Fall through
+            logger.debug("ADBC fetch failed, falling back", exc_info=True)
 
     # 2. ConnectorX path
     cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
@@ -73,50 +76,48 @@ def fetch_remote_into_duckdb(
             session.duckdb.register(table_name, df)
             return truncated
         except Exception:
-            pass  # Fall through to cursor streaming path
+            logger.debug("ConnectorX fetch failed, falling back", exc_info=True)
 
     # Cursor path: stream chunks into DuckDB to bound memory
     batch_size = 10_000
     total_rows = 0
     with engine.connect() as conn:
         conn = conn.execution_options(stream_results=True)
-        result = conn.execute(text(sql))
+        result = conn.execute(text(fetch_sql))
         columns = list(result.keys())
 
         created = False
 
         while True:
-            # If we've hit the limit, stop fetching
-            if max_rows is not None and total_rows >= max_rows:
-                truncated = True
-                break
-
             rows = result.fetchmany(batch_size)
             if not rows:
                 break
 
-            # Check if this chunk would exceed max_rows
-            if max_rows is not None and total_rows + len(rows) > max_rows:
-                # Take only what we need
-                rows = rows[: max_rows - total_rows]
-                truncated = True
-
-            data = {col: [row[i] for row in rows] for i, col in enumerate(columns)}
-            chunk_df = pl.DataFrame(data)
             total_rows += len(rows)
 
-            if not created:
-                session.duckdb.register(table_name, chunk_df)
-                created = True
-            else:
-                session.duckdb.register("__chunk__", chunk_df)
-                session.duckdb.execute_sql(
-                    f'INSERT INTO "{table_name}" SELECT * FROM __chunk__'
-                )
-
-            # Stop if we hit the limit
-            if max_rows is not None and total_rows >= max_rows:
+            # If this batch pushes us over max_rows, trim and mark truncated
+            if max_rows is not None and total_rows > max_rows:
+                excess = total_rows - max_rows
+                rows = rows[: len(rows) - excess]
                 truncated = True
+
+            if rows:
+                data = {
+                    col: [row[i] for row in rows]
+                    for i, col in enumerate(columns)
+                }
+                chunk_df = pl.DataFrame(data)
+
+                if not created:
+                    session.duckdb.register(table_name, chunk_df)
+                    created = True
+                else:
+                    session.duckdb.register("__chunk__", chunk_df)
+                    session.duckdb.execute_sql(
+                        f'INSERT INTO "{table_name}" SELECT * FROM __chunk__'
+                    )
+
+            if truncated:
                 break
 
         if not created:
@@ -246,7 +247,7 @@ def execute_remote(
         try:
             return execute_via_adbc(adbc_conn, sql, row_limit)
         except Exception:
-            pass  # Fall through to connectorx
+            logger.debug("ADBC query failed, falling back", exc_info=True)
 
     # 2. ConnectorX path
     cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
@@ -254,7 +255,7 @@ def execute_remote(
         try:
             return execute_via_connectorx(cx_url, sql, row_limit)
         except Exception:
-            pass  # Fall through to cursor
+            logger.debug("ConnectorX query failed, falling back", exc_info=True)
 
     # 3. Cursor fallback
     return execute_via_cursor(engine, sql, row_limit, timeout_seconds)

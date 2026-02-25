@@ -374,6 +374,27 @@ class SnowflakeDiscovery:
 
         return snowflake_adbc.connect(db_kwargs=params)
 
+    def get_adbc_connection(
+        self,
+        connection_name: str,
+        request: Request,
+    ) -> Any | None:
+        """Get an ADBC connection for a discovered Snowflake source.
+
+        Returns an ADBC DBAPI2 connection, or None if ADBC is unavailable,
+        auth doesn't support it, or the connection is not found.
+        """
+        if not self.has_adbc_support():
+            return None
+
+        user_id = self._extract_user_id(request)
+        connections = self._discovered_connections.get(user_id, {})
+        if connection_name not in connections:
+            return None
+
+        database, schema = connections[connection_name]
+        return self.create_adbc_connection(request, database, schema)
+
     def dispose_all(self) -> None:
         for engine in self._engines.values():
             engine.dispose()

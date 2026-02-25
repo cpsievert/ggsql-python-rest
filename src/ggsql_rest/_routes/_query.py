@@ -33,13 +33,7 @@ def resolve_source(
         return registry.get_engine(source, request), None
     if snowflake is not None and snowflake.has_connection(source, request):
         engine = snowflake.get_engine(source, request)
-        adbc_conn = None
-        if snowflake.has_adbc_support():
-            user_id = snowflake._extract_user_id(request)
-            connections = snowflake._discovered_connections.get(user_id, {})
-            if source in connections:
-                database, schema = connections[source]
-                adbc_conn = snowflake.create_adbc_connection(request, database, schema)
+        adbc_conn = snowflake.get_adbc_connection(source, request)
         return engine, adbc_conn
     raise KeyError(f"Unknown source: '{source}'")
 

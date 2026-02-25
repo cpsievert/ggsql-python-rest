@@ -497,3 +497,36 @@ def test_fetch_remote_into_duckdb_uses_adbc():
     # Verify data landed in DuckDB
     result = session.duckdb.execute_sql("SELECT * FROM test_table")
     assert len(result) == 3
+
+
+def test_fetch_remote_into_duckdb_adbc_truncation():
+    """fetch_remote_into_duckdb should detect truncation via ADBC."""
+    from unittest.mock import MagicMock
+
+    pa = pytest.importorskip("pyarrow")
+
+    # Return 6 rows, but request max_rows=5 → fetch_limit=6, so all 6 come back
+    # and truncation is detected (6 > 5)
+    arrow_table = pa.table({"x": list(range(6)), "y": list(range(6))})
+    mock_cursor = MagicMock()
+    mock_cursor.fetch_arrow_table.return_value = arrow_table
+
+    mock_adbc_conn = MagicMock()
+    mock_adbc_conn.cursor.return_value = mock_cursor
+
+    mock_engine = MagicMock()
+    session = Session("test", timeout_mins=30)
+
+    truncated = fetch_remote_into_duckdb(
+        mock_engine,
+        "SELECT * FROM t",
+        session,
+        "test_table",
+        max_rows=5,
+        adbc_conn=mock_adbc_conn,
+    )
+    assert truncated is True
+
+    # Should have exactly max_rows rows
+    result = session.duckdb.execute_sql("SELECT * FROM test_table")
+    assert len(result) == 5

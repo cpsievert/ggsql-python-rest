@@ -14,7 +14,9 @@ def _make_request(headers: dict[str, str] | None = None) -> Request:
         "type": "http",
         "method": "GET",
         "path": "/",
-        "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+        "headers": [
+            (k.lower().encode(), v.encode()) for k, v in (headers or {}).items()
+        ],
     }
     return Request(scope)
 
@@ -49,9 +51,11 @@ class TestSnowflakeConnection:
             account="test-account",
             warehouse="TEST_WH",
         )
-        request = _make_request({
-            "Posit-Connect-User-Session-Token": "test-token-123",
-        })
+        request = _make_request(
+            {
+                "Posit-Connect-User-Session-Token": "test-token-123",
+            }
+        )
 
         with (
             patch("ggsql_rest._snowflake.snowflake_connector") as mock_sf,
@@ -135,43 +139,78 @@ class TestParseSnowflakeType:
 
     def test_fixed_type(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
-        assert _parse_snowflake_type('{"type":"FIXED","precision":38,"scale":0,"nullable":true}') == "NUMBER(38,0)"
+
+        assert (
+            _parse_snowflake_type(
+                '{"type":"FIXED","precision":38,"scale":0,"nullable":true}'
+            )
+            == "NUMBER(38,0)"
+        )
 
     def test_fixed_with_scale(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
-        assert _parse_snowflake_type('{"type":"FIXED","precision":10,"scale":2,"nullable":true}') == "NUMBER(10,2)"
+
+        assert (
+            _parse_snowflake_type(
+                '{"type":"FIXED","precision":10,"scale":2,"nullable":true}'
+            )
+            == "NUMBER(10,2)"
+        )
 
     def test_text_type(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
-        assert _parse_snowflake_type('{"type":"TEXT","length":16777216,"nullable":true,"fixed":false}') == "VARCHAR"
+
+        assert (
+            _parse_snowflake_type(
+                '{"type":"TEXT","length":16777216,"nullable":true,"fixed":false}'
+            )
+            == "VARCHAR"
+        )
 
     def test_real_type(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
+
         assert _parse_snowflake_type('{"type":"REAL","nullable":true}') == "FLOAT"
 
     def test_date_type(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
+
         assert _parse_snowflake_type('{"type":"DATE","nullable":true}') == "DATE"
 
     def test_boolean_type(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
+
         assert _parse_snowflake_type('{"type":"BOOLEAN","nullable":true}') == "BOOLEAN"
 
     def test_timestamp_types(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
-        assert _parse_snowflake_type('{"type":"TIMESTAMP_NTZ","precision":0,"scale":9,"nullable":true}') == "TIMESTAMP_NTZ"
-        assert _parse_snowflake_type('{"type":"TIMESTAMP_LTZ","precision":0,"scale":9,"nullable":true}') == "TIMESTAMP_LTZ"
+
+        assert (
+            _parse_snowflake_type(
+                '{"type":"TIMESTAMP_NTZ","precision":0,"scale":9,"nullable":true}'
+            )
+            == "TIMESTAMP_NTZ"
+        )
+        assert (
+            _parse_snowflake_type(
+                '{"type":"TIMESTAMP_LTZ","precision":0,"scale":9,"nullable":true}'
+            )
+            == "TIMESTAMP_LTZ"
+        )
 
     def test_variant_type(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
+
         assert _parse_snowflake_type('{"type":"VARIANT","nullable":true}') == "VARIANT"
 
     def test_invalid_json_returns_varchar(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
+
         assert _parse_snowflake_type("not-json") == "VARCHAR"
 
     def test_missing_type_key(self):
         from ggsql_rest._snowflake import _parse_snowflake_type
+
         assert _parse_snowflake_type('{"nullable":true}') == "VARCHAR"
 
 
@@ -198,8 +237,22 @@ class TestStreamTableNames:
             if call_count["fetchall"] == 1:
                 # SHOW DATABASES
                 return [
-                    ("created_on", "DB1", "owner", "comment", "options", "retention_time"),
-                    ("created_on", "DB2", "owner", "comment", "options", "retention_time"),
+                    (
+                        "created_on",
+                        "DB1",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    ),
+                    (
+                        "created_on",
+                        "DB2",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    ),
                 ]
             elif call_count["fetchall"] == 2:
                 # SHOW TABLES IN DATABASE "DB1"
@@ -257,8 +310,22 @@ class TestStreamTableNames:
             if call_count["fetchall"] == 1:
                 # SHOW DATABASES
                 return [
-                    ("created_on", "DB1", "owner", "comment", "options", "retention_time"),
-                    ("created_on", "DB2", "owner", "comment", "options", "retention_time"),
+                    (
+                        "created_on",
+                        "DB1",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    ),
+                    (
+                        "created_on",
+                        "DB2",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    ),
                 ]
             elif call_count["fetchall"] == 2:
                 # SHOW TABLES IN DATABASE "DB1"
@@ -310,7 +377,16 @@ class TestStreamTableNames:
             call_count["fetchall"] += 1
             if call_count["fetchall"] == 1:
                 # SHOW DATABASES
-                return [("created_on", "DB1", "owner", "comment", "options", "retention_time")]
+                return [
+                    (
+                        "created_on",
+                        "DB1",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    )
+                ]
             elif call_count["fetchall"] == 2:
                 # SHOW TABLES IN DATABASE "DB1"
                 return [("created_on", "USERS", "DB1", "PUBLIC", "TABLE")]
@@ -330,7 +406,9 @@ class TestStreamTableNames:
 
         # Should populate connections cache
         assert "user1" in discovery._discovered_connections
-        assert discovery._discovered_connections["user1"] == {"DB1.PUBLIC": ("DB1", "PUBLIC")}
+        assert discovery._discovered_connections["user1"] == {
+            "DB1.PUBLIC": ("DB1", "PUBLIC")
+        }
 
     def test_uses_cache_on_second_call(self):
         """Second call to stream_table_names() uses cache without re-querying."""
@@ -366,8 +444,12 @@ class TestStreamTableNames:
         assert db_names == {"DB1", "DB2"}
 
         # Find DB1 and DB2 results
-        db1_result = next((tables for db_name, tables in results if db_name == "DB1"), None)
-        db2_result = next((tables for db_name, tables in results if db_name == "DB2"), None)
+        db1_result = next(
+            (tables for db_name, tables in results if db_name == "DB1"), None
+        )
+        db2_result = next(
+            (tables for db_name, tables in results if db_name == "DB2"), None
+        )
 
         assert db1_result is not None
         assert len(db1_result) == 2
@@ -398,15 +480,31 @@ class TestStreamTableNames:
             if call_count["fetchall"] == 1:
                 # SHOW DATABASES
                 return [
-                    ("created_on", "DB1", "owner", "comment", "options", "retention_time"),
-                    ("created_on", "EMPTY_DB", "owner", "comment", "options", "retention_time"),
+                    (
+                        "created_on",
+                        "DB1",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    ),
+                    (
+                        "created_on",
+                        "EMPTY_DB",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    ),
                 ]
             elif call_count["fetchall"] == 2:
                 # SHOW TABLES IN DATABASE "DB1"
                 return [("created_on", "USERS", "DB1", "PUBLIC", "TABLE")]
             elif call_count["fetchall"] == 3:
                 # SHOW TABLES IN DATABASE "EMPTY_DB" - only INFORMATION_SCHEMA tables
-                return [("created_on", "COLUMNS", "EMPTY_DB", "INFORMATION_SCHEMA", "TABLE")]
+                return [
+                    ("created_on", "COLUMNS", "EMPTY_DB", "INFORMATION_SCHEMA", "TABLE")
+                ]
             raise ValueError(f"Unexpected fetchall call #{call_count['fetchall']}")
 
         mock_cursor.fetchall.side_effect = fetchall_side_effect
@@ -445,12 +543,26 @@ class TestStreamTableNames:
             sql = getattr(mock_cursor, "_last_sql", "")
             if "SHOW DATABASES" in sql:
                 return [
-                    ("created_on", "DB1", "owner", "comment", "options", "retention_time"),
-                    ("created_on", "INACCESSIBLE_DB", "owner", "comment", "options", "retention_time"),
+                    (
+                        "created_on",
+                        "DB1",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    ),
+                    (
+                        "created_on",
+                        "INACCESSIBLE_DB",
+                        "owner",
+                        "comment",
+                        "options",
+                        "retention_time",
+                    ),
                 ]
-            elif "SHOW TABLES IN DATABASE \"DB1\"" in sql:
+            elif 'SHOW TABLES IN DATABASE "DB1"' in sql:
                 return [("created_on", "USERS", "DB1", "PUBLIC", "TABLE")]
-            elif "SHOW TABLES IN DATABASE \"INACCESSIBLE_DB\"" in sql:
+            elif 'SHOW TABLES IN DATABASE "INACCESSIBLE_DB"' in sql:
                 raise Exception("Access denied to database INACCESSIBLE_DB")
             raise ValueError(f"Unexpected SQL: {sql}")
 
@@ -490,7 +602,9 @@ class TestAdbcSupport:
         assert params["adbc.snowflake.sql.db"] == "MY_DB"
         assert params["adbc.snowflake.sql.schema"] == "PUBLIC"
         assert params["adbc.snowflake.sql.auth_type"] == "auth_oauth"
-        assert params["adbc.snowflake.sql.client_option.auth_token"] == "oauth_token_123"
+        assert (
+            params["adbc.snowflake.sql.client_option.auth_token"] == "oauth_token_123"
+        )
 
     def test_build_adbc_params_no_token_returns_none(self):
         """_build_adbc_params returns None when no OAuth token (local dev)."""

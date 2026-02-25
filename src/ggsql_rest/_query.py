@@ -54,10 +54,7 @@ def _fetch_remote_into_duckdb(
             if max_rows is not None and total_rows >= max_rows:
                 break
 
-            data = {
-                col: [row[i] for row in partition]
-                for i, col in enumerate(columns)
-            }
+            data = {col: [row[i] for row in partition] for i, col in enumerate(columns)}
             chunk_df = pl.DataFrame(data)
 
             if max_rows is not None:

@@ -35,7 +35,7 @@ from ggsql_rest._constants import SESSION_TOKEN_HEADER
 
 def _parse_snowflake_type(data_type_json: str) -> str:
     """SHOW COLUMNS returns data_type as JSON, e.g.:
-      {"type":"FIXED","precision":38,"scale":0,"nullable":true}
+    {"type":"FIXED","precision":38,"scale":0,"nullable":true}
     """
     try:
         parsed = json.loads(data_type_json)
@@ -163,6 +163,7 @@ class SnowflakeDiscovery:
     ) -> Engine:
         def creator():
             return self._create_connection(request, database=database, schema=schema)
+
         return create_engine("snowflake://not@used/db", creator=creator)
 
     def _get_cached_engine(
@@ -246,7 +247,9 @@ class SnowflakeDiscovery:
             raise KeyError(f"Connection '{connection_name}' not found")
 
         database, schema = connections[connection_name]
-        return self._get_cached_engine(user_id, connection_name, request, database, schema)
+        return self._get_cached_engine(
+            user_id, connection_name, request, database, schema
+        )
 
     def has_connection(
         self,

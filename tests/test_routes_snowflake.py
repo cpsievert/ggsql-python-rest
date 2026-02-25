@@ -42,7 +42,7 @@ async def test_schema_includes_snowflake_tables():
     mock_snowflake.get_tables.return_value = [
         TableSchema(
             table_name="USERS",
-            connection="MY_DB.PUBLIC",
+            source="MY_DB.PUBLIC",
             columns=[
                 ColumnSchema(column_name="ID", data_type="NUMBER"),
                 ColumnSchema(column_name="NAME", data_type="VARCHAR"),
@@ -56,7 +56,7 @@ async def test_schema_includes_snowflake_tables():
         response = await client.get(f"/sessions/{session.id}/schema")
         assert response.status_code == 200
         tables = response.json()["data"]["tables"]
-        snowflake_tables = [t for t in tables if t["connection"] == "MY_DB.PUBLIC"]
+        snowflake_tables = [t for t in tables if t["source"] == "MY_DB.PUBLIC"]
         assert len(snowflake_tables) == 1
         assert snowflake_tables[0]["tableName"] == "USERS"
 
@@ -80,7 +80,7 @@ async def test_schema_skip_slow_discovery():
     mock_snowflake.get_tables.return_value = [
         TableSchema(
             table_name="USERS",
-            connection="MY_DB.PUBLIC",
+            source="MY_DB.PUBLIC",
             columns=[ColumnSchema(column_name="ID", data_type="NUMBER")],
         ),
     ]

@@ -25,7 +25,7 @@ def test_get_local_table_schema_basic():
     schema = get_local_table_schema(duckdb, table_name, include_stats=False)
 
     assert schema.table_name == "test_table"
-    assert schema.connection is None
+    assert schema.source is None
     assert len(schema.columns) == 3
 
     col_names = [c.column_name for c in schema.columns]
@@ -90,7 +90,7 @@ def test_get_remote_table_schemas_basic():
     assert len(schemas) == 1
     table = schemas[0]
     assert table.table_name == "sales"
-    assert table.connection == "test_db"
+    assert table.source == "test_db"
     assert len(table.columns) == 3
 
     col_names = [c.column_name for c in table.columns]

@@ -23,17 +23,17 @@ router = APIRouter(prefix="/sessions/{session_id}", tags=["query"])
 
 
 def _resolve_engine(
-    connection: str,
+    source: str,
     request: Request,
     registry: ConnectionRegistry,
     snowflake: SnowflakeDiscovery | None,
 ) -> Engine:
-    """Resolve connection name to engine via registry or Snowflake discovery."""
-    if connection in registry.list_connections():
-        return registry.get_engine(connection, request)
-    if snowflake is not None and snowflake.has_connection(connection, request):
-        return snowflake.get_engine(connection, request)
-    raise KeyError(f"Unknown connection: '{connection}'")
+    """Resolve source name to engine via registry or Snowflake discovery."""
+    if source in registry.list_connections():
+        return registry.get_engine(source, request)
+    if snowflake is not None and snowflake.has_connection(source, request):
+        return snowflake.get_engine(source, request)
+    raise KeyError(f"Unknown source: '{source}'")
 
 
 @router.post("/query")
@@ -47,11 +47,11 @@ async def query(
 ) -> dict:
     """Execute a ggsql query."""
     engine = None
-    if body.connection:
+    if body.source:
         if pins is not None and pins.has_any_pin_for_query(body.query, request):
             pins.load_pins_for_query(body.query, request, session)
         else:
-            engine = _resolve_engine(body.connection, request, registry, snowflake)
+            engine = _resolve_engine(body.source, request, registry, snowflake)
 
     result = execute_ggsql(body.query, session, engine)
 
@@ -74,11 +74,11 @@ async def sql(
 ) -> dict:
     """Execute a pure SQL query."""
     engine = None
-    if body.connection:
+    if body.source:
         if pins is not None and pins.has_any_pin_for_query(body.query, request):
             pins.load_pins_for_query(body.query, request, session)
         else:
-            engine = _resolve_engine(body.connection, request, registry, snowflake)
+            engine = _resolve_engine(body.source, request, registry, snowflake)
 
     result = execute_sql(body.query, session, engine)
 

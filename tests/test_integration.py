@@ -40,7 +40,7 @@ async def test_remote_query_with_sqlite():
             f"/api/v1/sessions/{session_id}/query",
             json={
                 "query": "SELECT * FROM sales VISUALISE x, y DRAW point",
-                "connection": "test_db",
+                "source": "test_db",
             },
         )
 
@@ -80,7 +80,7 @@ async def test_sql_endpoint_with_remote():
             f"/api/v1/sessions/{session_id}/sql",
             json={
                 "query": "SELECT * FROM users",
-                "connection": "test_db",
+                "source": "test_db",
             },
         )
 
@@ -140,7 +140,7 @@ async def test_remote_query_with_filter():
                     WHERE category = 'Electronics'
                     VISUALISE price AS x, name AS y DRAW bar
                 """,
-                "connection": "test_db",
+                "source": "test_db",
             },
         )
 

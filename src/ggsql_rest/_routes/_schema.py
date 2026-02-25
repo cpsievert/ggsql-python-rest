@@ -33,7 +33,7 @@ async def schema_tables(
 
     # Local tables from session's DuckDB
     for table_name in session.tables:
-        local_tables.append(TableNameEntry(table_name=table_name, connection=None))
+        local_tables.append(TableNameEntry(table_name=table_name, source=None))
 
     # Remote tables from each registered connection
     for conn_name in registry.list_connections():
@@ -41,7 +41,7 @@ async def schema_tables(
         remote_table_names = get_remote_table_names(engine)
         provider = registry.get_provider(conn_name)
         for table_name in remote_table_names:
-            local_tables.append(TableNameEntry(table_name=table_name, connection=conn_name, provider=provider))
+            local_tables.append(TableNameEntry(table_name=table_name, source=conn_name, provider=provider))
 
     if not stream:
         # Original non-streaming path
@@ -49,11 +49,11 @@ async def schema_tables(
         if snowflake is not None and not skip_slow_discovery:
             snowflake_table_names = snowflake.get_table_names(request)
             for table_name, connection_name in snowflake_table_names:
-                tables.append(TableNameEntry(table_name=table_name, connection=connection_name, provider="snowflake"))
+                tables.append(TableNameEntry(table_name=table_name, source=connection_name, provider="snowflake"))
         if pins is not None and not skip_slow_discovery:
             for owner, table_names in pins.stream_table_names(request):
                 for table_name in table_names:
-                    tables.append(TableNameEntry(table_name=table_name, connection=owner, provider="pins"))
+                    tables.append(TableNameEntry(table_name=table_name, source=owner, provider="pins"))
         return success_envelope(TableNamesResponse(tables=tables))
 
     # Streaming path: NDJSON
@@ -67,7 +67,7 @@ async def schema_tables(
         if snowflake is not None and not skip_slow_discovery:
             for _db_name, batch in snowflake.stream_table_names(request):
                 entries = [
-                    TableNameEntry(table_name=tn, connection=cn, provider="snowflake")
+                    TableNameEntry(table_name=tn, source=cn, provider="snowflake")
                     for tn, cn in batch
                 ]
                 line = {"tables": [e.model_dump(by_alias=True) for e in entries]}
@@ -77,7 +77,7 @@ async def schema_tables(
         if pins is not None:
             for owner, table_names in pins.stream_table_names(request):
                 entries = [
-                    TableNameEntry(table_name=tn, connection=owner, provider="pins")
+                    TableNameEntry(table_name=tn, source=owner, provider="pins")
                     for tn in table_names
                 ]
                 line = {"tables": [e.model_dump(by_alias=True) for e in entries]}
@@ -123,7 +123,7 @@ async def schema(
 async def schema_table(
     request: Request,
     table_name: str,
-    connection: str | None = None,
+    source: str | None = None,
     include_stats: bool = False,
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
@@ -134,7 +134,7 @@ async def schema_table(
     table_schema: TableSchema | None = None
 
     # Local table
-    if connection is None:
+    if source is None:
         if table_name in session.tables:
             table_schema = get_local_table_schema(
                 session.duckdb, table_name, include_stats
@@ -143,9 +143,9 @@ async def schema_table(
             raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
 
     # Remote table from ConnectionRegistry
-    elif registry.has_connection(connection):
-        engine = registry.get_engine(connection, request)
-        remote_tables = get_remote_table_schemas(engine, connection, include_stats)
+    elif registry.has_connection(source):
+        engine = registry.get_engine(source, request)
+        remote_tables = get_remote_table_schemas(engine, source, include_stats)
         # Filter to requested table
         matching = [t for t in remote_tables if t.table_name == table_name]
         if matching:
@@ -153,28 +153,28 @@ async def schema_table(
         else:
             raise HTTPException(
                 status_code=404,
-                detail=f"Table '{table_name}' not found in connection '{connection}'"
+                detail=f"Table '{table_name}' not found in source '{source}'"
             )
 
     # Snowflake table
-    elif snowflake is not None and snowflake.has_connection(connection, request):
+    elif snowflake is not None and snowflake.has_connection(source, request):
         table_schema = snowflake.get_single_table_schema(
-            request, table_name, connection
+            request, table_name, source
         )
         if table_schema is None:
             raise HTTPException(
                 status_code=404,
-                detail=f"Table '{table_name}' not found in Snowflake connection '{connection}'"
+                detail=f"Table '{table_name}' not found in Snowflake source '{source}'"
             )
 
-    # Pins table (connection is the owner name, e.g., "garrick")
+    # Pins table (source is the owner name, e.g., "garrick")
     elif pins is not None and pins.has_pin(table_name, request):
         # Read schema metadata only (no full data download)
         columns = pins.get_pin_schema(table_name, request)
         if columns:
             table_schema = TableSchema(
                 table_name=table_name,
-                connection=connection,
+                source=source,
                 columns=[
                     ColumnSchema(column_name=col_name, data_type=col_type)
                     for col_name, col_type in columns
@@ -187,11 +187,11 @@ async def schema_table(
                 session.duckdb, table_name, include_stats
             )
 
-    # Connection not found
+    # Source not found
     else:
         raise HTTPException(
             status_code=404,
-            detail=f"Connection '{connection}' not found"
+            detail=f"Source '{source}' not found"
         )
 
     return success_envelope(table_schema)

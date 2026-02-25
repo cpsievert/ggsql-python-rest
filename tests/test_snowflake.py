@@ -264,7 +264,7 @@ class TestGetTables:
         assert len(result) == 2
 
         users = next(t for t in result if t.table_name == "USERS")
-        assert users.connection == "DB1.PUBLIC"
+        assert users.source == "DB1.PUBLIC"
         assert len(users.columns) == 2
         assert users.columns[0].column_name == "id"
         assert users.columns[0].data_type == "NUMBER(38,0)"
@@ -272,7 +272,7 @@ class TestGetTables:
         assert users.columns[1].data_type == "VARCHAR"
 
         orders = next(t for t in result if t.table_name == "ORDERS")
-        assert orders.connection == "DB1.PUBLIC"
+        assert orders.source == "DB1.PUBLIC"
         assert len(orders.columns) == 1
 
     def test_get_tables_caches_per_user(self):
@@ -288,7 +288,7 @@ class TestGetTables:
         discovery._discovered_tables["user1"] = [
             TableSchema(
                 table_name="USERS",
-                connection="DB1.PUBLIC",
+                source="DB1.PUBLIC",
                 columns=[ColumnSchema(column_name="id", data_type="NUMBER(38,0)")],
             )
         ]

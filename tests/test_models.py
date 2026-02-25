@@ -18,15 +18,15 @@ from ggsql_rest._models import (
 
 def test_query_request_with_connection():
     req = QueryRequest(
-        query="SELECT * FROM t VISUALISE x, y DRAW point", connection="warehouse"
+        query="SELECT * FROM t VISUALISE x, y DRAW point", source="warehouse"
     )
     assert req.query == "SELECT * FROM t VISUALISE x, y DRAW point"
-    assert req.connection == "warehouse"
+    assert req.source == "warehouse"
 
 
 def test_query_request_without_connection():
     req = QueryRequest(query="SELECT * FROM t VISUALISE x, y DRAW point")
-    assert req.connection is None
+    assert req.source is None
 
 
 def test_query_response():
@@ -104,12 +104,12 @@ def test_column_schema_with_stats():
 def test_table_schema_with_connection():
     table = TableSchema(
         table_name="sales",
-        connection="warehouse",
+        source="warehouse",
         columns=[ColumnSchema(column_name="id", data_type="INTEGER")],
     )
     dumped = table.model_dump(by_alias=True)
     assert dumped["tableName"] == "sales"
-    assert dumped["connection"] == "warehouse"
+    assert dumped["source"] == "warehouse"
     assert len(dumped["columns"]) == 1
 
 
@@ -123,4 +123,4 @@ def test_schema_response():
     dumped = schema.model_dump(by_alias=True)
     assert len(dumped["tables"]) == 1
     assert dumped["tables"][0]["tableName"] == "t1"
-    assert dumped["tables"][0]["connection"] is None
+    assert dumped["tables"][0]["source"] is None

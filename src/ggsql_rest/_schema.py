@@ -48,7 +48,7 @@ def get_local_table_schema(
             )
         )
 
-    return TableSchema(table_name=table_name, connection=None, columns=columns)
+    return TableSchema(table_name=table_name, source=None, columns=columns)
 
 
 def _get_duckdb_column_stats(
@@ -89,7 +89,7 @@ def get_remote_table_names(engine: Engine) -> list[str]:
 
 def get_remote_table_schemas(
     engine: Engine,
-    connection_name: str,
+    source_name: str,
     include_stats: bool,
 ) -> list[TableSchema]:
     """Extract schema for all tables in a remote database."""
@@ -120,7 +120,7 @@ def get_remote_table_schemas(
         tables.append(
             TableSchema(
                 table_name=table_name,
-                connection=connection_name,
+                source=source_name,
                 columns=columns,
             )
         )

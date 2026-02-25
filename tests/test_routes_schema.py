@@ -54,7 +54,7 @@ async def test_schema_local_table():
         tables = body["data"]["tables"]
         assert len(tables) == 1
         assert tables[0]["tableName"] == "data"
-        assert tables[0]["connection"] is None
+        assert tables[0]["source"] is None
         assert len(tables[0]["columns"]) == 3
 
 
@@ -108,7 +108,7 @@ async def test_schema_with_remote_connection():
         assert response.status_code == 200
         tables = response.json()["data"]["tables"]
 
-        remote_tables = [t for t in tables if t["connection"] == "test_db"]
+        remote_tables = [t for t in tables if t["source"] == "test_db"]
         assert len(remote_tables) == 1
         assert remote_tables[0]["tableName"] == "users"
 
@@ -159,7 +159,7 @@ async def test_schema_tables_local():
         tables = body["data"]["tables"]
         assert len(tables) == 1
         assert tables[0]["tableName"] == "data"
-        assert tables[0]["connection"] is None
+        assert tables[0]["source"] is None
         # Verify no columns are included
         assert "columns" not in tables[0]
 
@@ -192,7 +192,7 @@ async def test_schema_tables_with_remote():
         tables = response.json()["data"]["tables"]
 
         # Find the remote table
-        remote_tables = [t for t in tables if t["connection"] == "test_db"]
+        remote_tables = [t for t in tables if t["source"] == "test_db"]
         assert len(remote_tables) == 1
         assert remote_tables[0]["tableName"] == "users"
         # Verify no columns are included
@@ -218,7 +218,7 @@ async def test_schema_table_local():
         assert body["status"] == "success"
         table = body["data"]
         assert table["tableName"] == "data"
-        assert table["connection"] is None
+        assert table["source"] is None
         assert len(table["columns"]) == 3
         column_names = {c["columnName"] for c in table["columns"]}
         assert column_names == {"x", "y", "label"}
@@ -274,13 +274,13 @@ async def test_schema_table_remote():
         session = session_mgr.create()
 
         response = await client.get(
-            f"/sessions/{session.id}/schema/table/users?connection=test_db"
+            f"/sessions/{session.id}/schema/table/users?source=test_db"
         )
 
         assert response.status_code == 200
         table = response.json()["data"]
         assert table["tableName"] == "users"
-        assert table["connection"] == "test_db"
+        assert table["source"] == "test_db"
         column_names = {c["columnName"] for c in table["columns"]}
         assert column_names == {"id", "name"}
 
@@ -324,7 +324,7 @@ async def test_schema_tables_stream_local():
         assert "tables" in first_line
         assert len(first_line["tables"]) == 1
         assert first_line["tables"][0]["tableName"] == "data"
-        assert first_line["tables"][0]["connection"] is None
+        assert first_line["tables"][0]["source"] is None
 
 
 @pytest.mark.anyio
@@ -360,7 +360,7 @@ async def test_schema_tables_stream_with_remote():
 
         first_line = json.loads(lines[0])
         assert "tables" in first_line
-        remote_tables = [t for t in first_line["tables"] if t["connection"] == "test_db"]
+        remote_tables = [t for t in first_line["tables"] if t["source"] == "test_db"]
         assert len(remote_tables) == 1
         assert remote_tables[0]["tableName"] == "users"
 
@@ -417,12 +417,12 @@ async def test_schema_tables_includes_provider():
         tables = response.json()["data"]["tables"]
 
         # Local table should have provider=None
-        local_tables = [t for t in tables if t["connection"] is None]
+        local_tables = [t for t in tables if t["source"] is None]
         assert len(local_tables) == 1
         assert local_tables[0]["provider"] is None
 
         # Remote table should have provider="sqlite"
-        remote_tables = [t for t in tables if t["connection"] == "test_db"]
+        remote_tables = [t for t in tables if t["source"] == "test_db"]
         assert len(remote_tables) == 1
         assert remote_tables[0]["provider"] == "sqlite"
 
@@ -467,11 +467,11 @@ async def test_schema_tables_stream_includes_provider():
         tables = first_line["tables"]
 
         # Local table should have provider=None
-        local_tables = [t for t in tables if t["connection"] is None]
+        local_tables = [t for t in tables if t["source"] is None]
         assert len(local_tables) == 1
         assert local_tables[0]["provider"] is None
 
         # Remote table should have provider="sqlite"
-        remote_tables = [t for t in tables if t["connection"] == "test_db"]
+        remote_tables = [t for t in tables if t["source"] == "test_db"]
         assert len(remote_tables) == 1
         assert remote_tables[0]["provider"] == "sqlite"

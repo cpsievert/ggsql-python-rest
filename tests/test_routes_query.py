@@ -125,7 +125,7 @@ async def test_query_unknown_connection_returns_400():
 
         response = await client.post(
             f"/sessions/{session_id}/query",
-            json={"query": "SELECT 1 VISUALISE x DRAW point", "connection": "nope"},
+            json={"query": "SELECT 1 VISUALISE x DRAW point", "source": "nope"},
         )
         assert response.status_code == 400
         body = response.json()

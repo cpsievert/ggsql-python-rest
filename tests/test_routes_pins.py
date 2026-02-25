@@ -62,8 +62,8 @@ async def test_streaming_schema_includes_pins(app_with_pins):
             assert any(t["tableName"] == "bob__data" for t in pin_tables)
 
             # Connection should be the owner name, not "pins"
-            alice_tables = [t for t in pin_tables if t["connection"] == "alice"]
-            bob_tables = [t for t in pin_tables if t["connection"] == "bob"]
+            alice_tables = [t for t in pin_tables if t["source"] == "alice"]
+            bob_tables = [t for t in pin_tables if t["source"] == "bob"]
             assert len(alice_tables) == 2
             assert len(bob_tables) == 1
 
@@ -114,7 +114,7 @@ async def test_query_with_pins_connection_loads_data():
 
             resp = await client.post(
                 f"/api/v1/sessions/{session_id}/sql",
-                json={"query": "SELECT * FROM test__data", "connection": "pins"},
+                json={"query": "SELECT * FROM test__data", "source": "pins"},
             )
             assert resp.status_code == 200
             data = resp.json()["data"]

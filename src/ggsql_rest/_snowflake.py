@@ -453,7 +453,7 @@ class SnowflakeDiscovery:
             all_tables.append(
                 TableSchema(
                     table_name=table,
-                    connection=conn_name,
+                    source=conn_name,
                     columns=[
                         ColumnSchema(column_name=name, data_type=dtype)
                         for name, dtype in cols
@@ -551,7 +551,7 @@ class SnowflakeDiscovery:
 
             return TableSchema(
                 table_name=table_name,
-                connection=connection,
+                source=connection,
                 columns=columns,
             )
         finally:

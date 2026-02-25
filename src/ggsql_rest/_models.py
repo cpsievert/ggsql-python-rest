@@ -30,14 +30,14 @@ class QueryRequest(CamelModel):
     """Request body for ggsql query execution."""
 
     query: str
-    connection: str | None = None
+    source: str | None = None
 
 
 class SqlRequest(CamelModel):
     """Request body for pure SQL execution."""
 
     query: str
-    connection: str | None = None
+    source: str | None = None
 
 
 # === Responses ===
@@ -101,7 +101,7 @@ class TableSchema(CamelModel):
     """Schema for a single table."""
 
     table_name: str
-    connection: str | None = None
+    source: str | None = None
     columns: list[ColumnSchema]
 
 
@@ -115,7 +115,7 @@ class TableNameEntry(CamelModel):
     """Entry in the table names listing (no column info)."""
 
     table_name: str
-    connection: str | None = None
+    source: str | None = None
     provider: str | None = None
 
 

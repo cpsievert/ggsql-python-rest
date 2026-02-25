@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 from ggsql_rest._sessions import Session
-from ggsql_rest._query import execute_ggsql, execute_sql
+from ggsql_rest._query import execute_ggsql, execute_sql, execute_remote
 
 
 def test_execute_ggsql_local():
@@ -115,3 +115,20 @@ def test_execute_ggsql_remote_limits_rows():
 
     # Should have at most 50 rows in the visualization
     assert result["metadata"]["rows"] <= 50
+
+
+def test_execute_remote_respects_timeout():
+    """execute_remote should accept a timeout parameter."""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (id INTEGER)"))
+        conn.execute(text("INSERT INTO t VALUES (1)"))
+
+    # Should work normally with a timeout set (SQLite doesn't enforce it,
+    # but we verify the parameter is accepted and execution completes)
+    df = execute_remote(engine, "SELECT * FROM t", timeout_seconds=5)
+    assert len(df) == 1

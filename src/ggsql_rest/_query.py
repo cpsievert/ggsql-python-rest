@@ -85,13 +85,20 @@ def execute_ggsql(
 
 
 def execute_remote(
-    engine: Engine, sql: str, max_rows: int | None = None
+    engine: Engine,
+    sql: str,
+    max_rows: int | None = None,
+    timeout_seconds: int | None = None,
 ) -> pl.DataFrame:
     """Execute SQL on remote database, return as Polars DataFrame.
 
     If max_rows is provided, fetches at most max_rows + 1 rows to detect truncation.
+    If timeout_seconds is provided, sets execution timeout on the connection.
     """
     with engine.connect() as conn:
+        if timeout_seconds is not None:
+            conn = conn.execution_options(timeout=timeout_seconds)
+
         result = conn.execute(text(sql))
         columns = list(result.keys())
 

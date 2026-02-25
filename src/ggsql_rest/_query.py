@@ -10,14 +10,14 @@ from ggsql import validate, VegaLiteWriter
 from ._sessions import Session
 
 try:
-    import connectorx as _cx  # noqa: F401
+    import connectorx as cx  # noqa: F401
 
-    _HAS_CONNECTORX = True
+    HAS_CONNECTORX = True
 except ImportError:
-    _HAS_CONNECTORX = False
+    HAS_CONNECTORX = False
 
 
-def _fetch_remote_into_duckdb(
+def fetch_remote_into_duckdb(
     engine: Engine,
     sql: str,
     session: Session,
@@ -29,11 +29,11 @@ def _fetch_remote_into_duckdb(
     When connectorx is available, fetches as a single Arrow DataFrame (zero-copy).
     Otherwise, streams chunks via server-side cursor to bound memory usage.
     """
-    cx_url = _connectorx_supported_url(engine) if _HAS_CONNECTORX else None
+    cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
 
     if cx_url is not None:
         try:
-            df = _execute_via_connectorx(cx_url, sql, max_rows)
+            df = execute_via_connectorx(cx_url, sql, max_rows)
             session.duckdb.register(table_name, df)
             return
         except Exception:
@@ -113,7 +113,7 @@ def execute_ggsql(
 
     if engine is not None and sql_portion.strip():
         table_name = f"__remote_result_{uuid.uuid4().hex[:8]}__"
-        _fetch_remote_into_duckdb(engine, sql_portion, session, table_name, max_rows)
+        fetch_remote_into_duckdb(engine, sql_portion, session, table_name, max_rows)
         local_query = f"SELECT * FROM {table_name} {validated.visual()}"
     else:
         local_query = query
@@ -133,7 +133,7 @@ def execute_ggsql(
     }
 
 
-def _connectorx_supported_url(engine: Engine) -> str | None:
+def connectorx_supported_url(engine: Engine) -> str | None:
     """Return a connectorx-compatible URI string, or None if unsupported.
 
     Connectorx can't connect to:
@@ -163,18 +163,18 @@ def execute_remote(
     """
     # Fetch one extra row so callers can detect truncation
     row_limit = max_rows + 1 if max_rows is not None else None
-    cx_url = _connectorx_supported_url(engine) if _HAS_CONNECTORX else None
+    cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
 
     if cx_url is not None:
         try:
-            return _execute_via_connectorx(cx_url, sql, row_limit)
+            return execute_via_connectorx(cx_url, sql, row_limit)
         except Exception:
             pass  # Fall through to cursor path
 
-    return _execute_via_cursor(engine, sql, row_limit, timeout_seconds)
+    return execute_via_cursor(engine, sql, row_limit, timeout_seconds)
 
 
-def _execute_via_connectorx(
+def execute_via_connectorx(
     url: str,
     sql: str,
     row_limit: int | None,
@@ -185,7 +185,7 @@ def _execute_via_connectorx(
     return pl.read_database_uri(sql, url, engine="connectorx")
 
 
-def _execute_via_cursor(
+def execute_via_cursor(
     engine: Engine,
     sql: str,
     row_limit: int | None,

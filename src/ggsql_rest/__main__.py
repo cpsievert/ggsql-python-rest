@@ -79,7 +79,11 @@ def main() -> None:
             connection_name=os.environ.get("SNOWFLAKE_CONNECTION_NAME"),
             databases=snowflake_databases,
         )
-        db_msg = f", databases: {','.join(snowflake_databases)}" if snowflake_databases else ""
+        db_msg = (
+            f", databases: {','.join(snowflake_databases)}"
+            if snowflake_databases
+            else ""
+        )
         print(f"Snowflake discovery enabled (account: {snowflake_account}{db_msg})")
     elif snowflake_account or snowflake_warehouse:
         print(
@@ -90,16 +94,21 @@ def main() -> None:
     # Pins discovery (enabled when the 'pins' package is installed)
     pins = None
     try:
-        import pins as _pins_pkg  # noqa: F401
+        import pins as pins_pkg  # noqa: F401
 
         from ._pins import PinsDiscovery
+
         pins = PinsDiscovery()
         print("Pins discovery enabled")
     except ImportError:
         pass
 
     app = create_app(
-        registry, cors_origins=args.cors_origins, seed_data=seed_data, snowflake=snowflake, pins=pins
+        registry,
+        cors_origins=args.cors_origins,
+        seed_data=seed_data,
+        snowflake=snowflake,
+        pins=pins,
     )
     uvicorn.run(app, host=args.host, port=args.port)
 

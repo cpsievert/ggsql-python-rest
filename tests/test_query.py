@@ -194,7 +194,7 @@ def test_execute_remote_connectorx_with_max_rows():
 
 def test_execute_remote_falls_back_without_connectorx(monkeypatch):
     """execute_remote falls back to cursor when connectorx is unavailable."""
-    monkeypatch.setattr("ggsql_rest._query._HAS_CONNECTORX", False)
+    monkeypatch.setattr("ggsql_rest._query.HAS_CONNECTORX", False)
 
     engine = create_engine(
         "sqlite:///:memory:",

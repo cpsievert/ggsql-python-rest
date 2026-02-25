@@ -12,7 +12,10 @@ from ggsql_rest import create_app, ConnectionRegistry
 from ggsql_rest._pins import PinEntry, PinsDiscovery
 
 _TEST_API_KEY = "test-api-key"
-_TEST_ENV = {"CONNECT_API_KEY": _TEST_API_KEY, "CONNECT_SERVER": "https://connect.example.com"}
+_TEST_ENV = {
+    "CONNECT_API_KEY": _TEST_API_KEY,
+    "CONNECT_SERVER": "https://connect.example.com",
+}
 
 
 @pytest.fixture
@@ -49,7 +52,11 @@ async def test_streaming_schema_includes_pins(app_with_pins):
             )
             assert resp.status_code == 200
 
-            lines = [json.loads(line) for line in resp.text.strip().split("\n") if line.strip()]
+            lines = [
+                json.loads(line)
+                for line in resp.text.strip().split("\n")
+                if line.strip()
+            ]
 
             all_tables = []
             for line in lines:
@@ -78,9 +85,7 @@ async def test_non_streaming_schema_includes_pins(app_with_pins):
             resp = await client.post("/api/v1/sessions")
             session_id = resp.json()["data"]["sessionId"]
 
-            resp = await client.get(
-                f"/api/v1/sessions/{session_id}/schema/tables"
-            )
+            resp = await client.get(f"/api/v1/sessions/{session_id}/schema/tables")
             assert resp.status_code == 200
             assert resp.headers["content-type"] == "application/x-ndjson"
 

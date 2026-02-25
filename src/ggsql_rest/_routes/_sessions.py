@@ -50,7 +50,7 @@ def list_tables(session: Session = Depends(get_session)) -> dict:
     return success_envelope(TablesResponse(tables=session.tables))
 
 
-def _sanitize_table_name(stem: str, existing_tables: list[str]) -> str:
+def sanitize_table_name(stem: str, existing_tables: list[str]) -> str:
     name = re.sub(r"[^a-zA-Z0-9_]", "_", stem)
     name = re.sub(r"_+", "_", name)
     name = name.strip("_")
@@ -75,7 +75,7 @@ async def upload_file(
         raise invalid_request("Filename is required")
 
     if table_name is None:
-        table_name = _sanitize_table_name(Path(file.filename).stem, session.tables)
+        table_name = sanitize_table_name(Path(file.filename).stem, session.tables)
 
     content = await file.read()
     extension = Path(file.filename).suffix.lower()

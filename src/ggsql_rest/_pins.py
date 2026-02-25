@@ -27,9 +27,7 @@ class PinsDiscovery:
         self._loaded_pins: dict[str, set[str]] = {}
         self._token_cache: dict[str, str] = {}  # session_token -> viewer api_key
 
-    def stream_table_names(
-        self, request: Request
-    ) -> Iterator[tuple[str, list[str]]]:
+    def stream_table_names(self, request: Request) -> Iterator[tuple[str, list[str]]]:
         """Yield ``(owner, [table_name, ...])`` batches. Discovery is cached per viewer."""
         try:
             api_key = self._resolve_api_key(request)
@@ -43,9 +41,7 @@ class PinsDiscovery:
 
         yield from self._discover_and_stream(api_key)
 
-    def _discover_and_stream(
-        self, api_key: str
-    ) -> Iterator[tuple[str, list[str]]]:
+    def _discover_and_stream(self, api_key: str) -> Iterator[tuple[str, list[str]]]:
         """Discover pins via posit-sdk content API.
 
         content.find(content_type='pin') doesn't actually filter — use content_category instead.
@@ -58,9 +54,7 @@ class PinsDiscovery:
         user_map: dict[str, str] = {u["guid"]: u["username"] for u in users}
 
         all_content = client.content.find()
-        pin_content = [
-            p for p in all_content if p.get("content_category") == "pin"
-        ]
+        pin_content = [p for p in all_content if p.get("content_category") == "pin"]
 
         by_owner: dict[str, list[dict]] = {}  # type: ignore[type-arg]
         for p in pin_content:
@@ -68,7 +62,9 @@ class PinsDiscovery:
 
         self._discovered_pins[api_key] = []
 
-        for owner_guid, items in sorted(by_owner.items(), key=lambda x: user_map.get(x[0], "unknown")):
+        for owner_guid, items in sorted(
+            by_owner.items(), key=lambda x: user_map.get(x[0], "unknown")
+        ):
             owner = user_map.get(owner_guid, "unknown")
             table_names: list[str] = []
             for p in items:
@@ -104,7 +100,10 @@ class PinsDiscovery:
         request: Request,
         session: Session,
     ) -> None:
-        if session_id in self._loaded_pins and table_name in self._loaded_pins[session_id]:
+        if (
+            session_id in self._loaded_pins
+            and table_name in self._loaded_pins[session_id]
+        ):
             return
 
         pin = self._find_pin(table_name, request)

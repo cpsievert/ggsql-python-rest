@@ -4,4 +4,10 @@ from ._connections import ConnectionRegistry
 from ._pins import PinsDiscovery
 from ._version import __version__
 
-__all__ = ["__version__", "create_app", "ConnectionRegistry", "load_connections_from_yaml", "PinsDiscovery"]
+__all__ = [
+    "__version__",
+    "create_app",
+    "ConnectionRegistry",
+    "load_connections_from_yaml",
+    "PinsDiscovery",
+]

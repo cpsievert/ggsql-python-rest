@@ -20,7 +20,7 @@ from ._dependencies import get_registry, get_snowflake_discovery, get_pins_disco
 router = APIRouter(prefix="/sessions/{session_id}", tags=["query"])
 
 
-def _resolve_engine(
+def resolve_engine(
     source: str,
     request: Request,
     registry: ConnectionRegistry,
@@ -47,7 +47,7 @@ async def query(
         if pins is not None and pins.has_any_pin_for_query(body.query, request):
             pins.load_pins_for_query(body.query, request, session)
         else:
-            engine = _resolve_engine(body.source, request, registry, snowflake)
+            engine = resolve_engine(body.source, request, registry, snowflake)
 
     result = execute_ggsql(body.query, session, engine, max_rows=body.max_rows)
 
@@ -73,7 +73,7 @@ async def sql(
         if pins is not None and pins.has_any_pin_for_query(body.query, request):
             pins.load_pins_for_query(body.query, request, session)
         else:
-            engine = _resolve_engine(body.source, request, registry, snowflake)
+            engine = resolve_engine(body.source, request, registry, snowflake)
 
     result = execute_sql(body.query, session, engine)
 

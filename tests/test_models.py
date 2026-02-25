@@ -92,13 +92,26 @@ def test_success_envelope_without_data():
 def test_column_schema_serializes_camel_case():
     col = ColumnSchema(column_name="region", data_type="VARCHAR")
     dumped = col.model_dump(by_alias=True)
-    assert dumped == {"columnName": "region", "dataType": "VARCHAR", "minValue": None, "maxValue": None, "categoricalValues": None}
+    assert dumped == {
+        "columnName": "region",
+        "dataType": "VARCHAR",
+        "minValue": None,
+        "maxValue": None,
+        "categoricalValues": None,
+    }
 
 
 def test_column_schema_with_stats():
-    col = ColumnSchema(column_name="price", data_type="DOUBLE", min_value="0.0", max_value="999.99")
+    col = ColumnSchema(
+        column_name="price", data_type="DOUBLE", min_value="0.0", max_value="999.99"
+    )
     dumped = col.model_dump(by_alias=True, exclude_none=True)
-    assert dumped == {"columnName": "price", "dataType": "DOUBLE", "minValue": "0.0", "maxValue": "999.99"}
+    assert dumped == {
+        "columnName": "price",
+        "dataType": "DOUBLE",
+        "minValue": "0.0",
+        "maxValue": "999.99",
+    }
 
 
 def test_table_schema_with_connection():
@@ -114,12 +127,14 @@ def test_table_schema_with_connection():
 
 
 def test_schema_response():
-    schema = SchemaResponse(tables=[
-        TableSchema(
-            table_name="t1",
-            columns=[ColumnSchema(column_name="x", data_type="INTEGER")],
-        )
-    ])
+    schema = SchemaResponse(
+        tables=[
+            TableSchema(
+                table_name="t1",
+                columns=[ColumnSchema(column_name="x", data_type="INTEGER")],
+            )
+        ]
+    )
     dumped = schema.model_dump(by_alias=True)
     assert len(dumped["tables"]) == 1
     assert dumped["tables"][0]["tableName"] == "t1"

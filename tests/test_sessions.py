@@ -169,9 +169,26 @@ def test_make_sample_data():
     assert len(by_name["employees"]) == 6
 
     # Verify column structure
-    assert set(by_name["products"].columns) == {"product_id", "product_name", "category", "price"}
-    assert set(by_name["sales"].columns) == {"sale_id", "product_id", "quantity", "sale_date", "region"}
-    assert set(by_name["employees"].columns) == {"employee_id", "employee_name", "department", "salary", "hire_date"}
+    assert set(by_name["products"].columns) == {
+        "product_id",
+        "product_name",
+        "category",
+        "price",
+    }
+    assert set(by_name["sales"].columns) == {
+        "sale_id",
+        "product_id",
+        "quantity",
+        "sale_date",
+        "region",
+    }
+    assert set(by_name["employees"].columns) == {
+        "employee_id",
+        "employee_name",
+        "department",
+        "salary",
+        "hire_date",
+    }
 
 
 def test_make_sample_data_queryable():

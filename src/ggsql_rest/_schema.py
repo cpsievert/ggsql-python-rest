@@ -3,7 +3,7 @@ from sqlalchemy import Engine, inspect as sa_inspect, text
 
 from ._models import ColumnSchema, TableSchema
 
-_NUMERIC_PREFIXES = (
+NUMERIC_PREFIXES = (
     "INTEGER",
     "BIGINT",
     "SMALLINT",
@@ -15,17 +15,17 @@ _NUMERIC_PREFIXES = (
     "REAL",
     "NUMERIC",
 )
-_TEXT_PREFIXES = ("VARCHAR", "TEXT", "STRING", "CHAR")
+TEXT_PREFIXES = ("VARCHAR", "TEXT", "STRING", "CHAR")
 
 
-def _is_numeric_type(data_type: str) -> bool:
+def is_numeric_type(data_type: str) -> bool:
     upper = data_type.upper()
-    return any(upper.startswith(prefix) for prefix in _NUMERIC_PREFIXES)
+    return any(upper.startswith(prefix) for prefix in NUMERIC_PREFIXES)
 
 
-def _is_text_type(data_type: str) -> bool:
+def is_text_type(data_type: str) -> bool:
     upper = data_type.upper()
-    return any(upper.startswith(prefix) for prefix in _TEXT_PREFIXES)
+    return any(upper.startswith(prefix) for prefix in TEXT_PREFIXES)
 
 
 def get_local_table_schema(
@@ -42,7 +42,7 @@ def get_local_table_schema(
 
         stats: dict = {}
         if include_stats:
-            stats = _get_duckdb_column_stats(duckdb, table_name, col_name, col_type)
+            stats = get_duckdb_column_stats(duckdb, table_name, col_name, col_type)
 
         columns.append(
             ColumnSchema(
@@ -55,7 +55,7 @@ def get_local_table_schema(
     return TableSchema(table_name=table_name, source=None, columns=columns)
 
 
-def _get_duckdb_column_stats(
+def get_duckdb_column_stats(
     duckdb: DuckDBReader,
     table_name: str,
     col_name: str,
@@ -63,7 +63,7 @@ def _get_duckdb_column_stats(
 ) -> dict:
     stats: dict = {}
 
-    if _is_numeric_type(col_type):
+    if is_numeric_type(col_type):
         result = duckdb.execute_sql(
             f'SELECT MIN("{col_name}") AS min_val, MAX("{col_name}") AS max_val FROM "{table_name}"'
         )
@@ -73,7 +73,7 @@ def _get_duckdb_column_stats(
         if row["max_val"] is not None:
             stats["max_value"] = str(row["max_val"])
 
-    elif _is_text_type(col_type):
+    elif is_text_type(col_type):
         result = duckdb.execute_sql(
             f'SELECT DISTINCT "{col_name}" FROM "{table_name}" WHERE "{col_name}" IS NOT NULL LIMIT 21'
         )
@@ -103,7 +103,7 @@ def get_remote_single_table_schema(
     batch_stats: dict[str, dict] = {}
     if include_stats:
         col_pairs = [(ci["name"], str(ci["type"])) for ci in col_infos]
-        batch_stats = _get_remote_table_stats_batched(engine, table_name, col_pairs)
+        batch_stats = get_remote_table_stats_batched(engine, table_name, col_pairs)
 
     columns = []
     for col_info in col_infos:
@@ -138,7 +138,7 @@ def get_remote_table_schemas(
         batch_stats: dict[str, dict] = {}
         if include_stats:
             col_pairs = [(ci["name"], str(ci["type"])) for ci in col_infos]
-            batch_stats = _get_remote_table_stats_batched(engine, table_name, col_pairs)
+            batch_stats = get_remote_table_stats_batched(engine, table_name, col_pairs)
 
         columns = []
         for col_info in col_infos:
@@ -164,19 +164,19 @@ def get_remote_table_schemas(
     return tables
 
 
-def _is_remote_numeric_type(type_str: str) -> bool:
+def is_remote_numeric_type(type_str: str) -> bool:
     upper = type_str.upper()
     return any(
         kw in upper for kw in ("INT", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC", "REAL")
     )
 
 
-def _is_remote_text_type(type_str: str) -> bool:
+def is_remote_text_type(type_str: str) -> bool:
     upper = type_str.upper()
     return any(kw in upper for kw in ("VARCHAR", "TEXT", "CHAR", "STRING"))
 
 
-def _get_remote_table_stats_batched(
+def get_remote_table_stats_batched(
     engine: Engine,
     table_name: str,
     columns: list[tuple[str, str]],
@@ -186,9 +186,7 @@ def _get_remote_table_stats_batched(
     """
     stats: dict[str, dict] = {}
 
-    numeric_cols = [
-        (name, typ) for name, typ in columns if _is_remote_numeric_type(typ)
-    ]
+    numeric_cols = [(name, typ) for name, typ in columns if is_remote_numeric_type(typ)]
     if numeric_cols:
         parts = []
         for col_name, _ in numeric_cols:
@@ -210,7 +208,7 @@ def _get_remote_table_stats_batched(
                         col_stats["max_value"] = str(max_val)
                     stats[col_name] = col_stats
 
-    text_cols = [(name, typ) for name, typ in columns if _is_remote_text_type(typ)]
+    text_cols = [(name, typ) for name, typ in columns if is_remote_text_type(typ)]
     for col_name, _ in text_cols:
         with engine.connect() as conn:
             result = conn.execute(

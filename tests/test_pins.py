@@ -19,7 +19,9 @@ def _make_request(headers: dict[str, str] | None = None) -> Request:
         "type": "http",
         "method": "GET",
         "path": "/",
-        "headers": [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()],
+        "headers": [
+            (k.lower().encode(), v.encode()) for k, v in (headers or {}).items()
+        ],
     }
     return Request(scope)
 
@@ -72,12 +74,14 @@ class TestSanitizePinName:
 
 class TestPinsDiscoveryStreamTableNames:
     def test_discovers_all_pins_grouped_by_owner(self):
-        mock_client = _mock_connect_client([
-            _pin_item("sales", "alice"),
-            _pin_item("model", "alice"),
-            _pin_item("revenue", "bob"),
-            _pin_item("config", "bob"),
-        ])
+        mock_client = _mock_connect_client(
+            [
+                _pin_item("sales", "alice"),
+                _pin_item("model", "alice"),
+                _pin_item("revenue", "bob"),
+                _pin_item("config", "bob"),
+            ]
+        )
 
         with (
             patch("posit.connect.Client", return_value=mock_client),
@@ -150,13 +154,23 @@ class TestPinsDiscoveryStreamTableNames:
         assert len(batches) == 0
 
     def test_filters_non_pin_content(self):
-        mock_client = _mock_connect_client([
-            _pin_item("sales", "alice"),
-            {"name": "my_shiny_app", "owner_guid": "guid-alice", "content_category": "shiny"},
-            _pin_item("model", "alice"),
-            {"name": "dashboard", "owner_guid": "guid-bob", "content_category": "quarto"},
-            _pin_item("revenue", "bob"),
-        ])
+        mock_client = _mock_connect_client(
+            [
+                _pin_item("sales", "alice"),
+                {
+                    "name": "my_shiny_app",
+                    "owner_guid": "guid-alice",
+                    "content_category": "shiny",
+                },
+                _pin_item("model", "alice"),
+                {
+                    "name": "dashboard",
+                    "owner_guid": "guid-bob",
+                    "content_category": "quarto",
+                },
+                _pin_item("revenue", "bob"),
+            ]
+        )
 
         with (
             patch("posit.connect.Client", return_value=mock_client),
@@ -210,10 +224,14 @@ class TestPinsDiscoveryStreamTableNames:
             patch.dict(os.environ, _TEST_ENV),
         ):
             discovery = PinsDiscovery()
-            request = _make_request({"Posit-Connect-User-Session-Token": "session-token-abc"})
+            request = _make_request(
+                {"Posit-Connect-User-Session-Token": "session-token-abc"}
+            )
             batches = list(discovery.stream_table_names(request))
 
-        mock_owner_client.with_user_session_token.assert_called_once_with("session-token-abc")
+        mock_owner_client.with_user_session_token.assert_called_once_with(
+            "session-token-abc"
+        )
         assert len(batches) == 1
 
     def test_session_token_cached(self):
@@ -241,7 +259,9 @@ class TestPinsDiscoveryStreamTableNames:
             patch.dict(os.environ, _TEST_ENV),
         ):
             discovery = PinsDiscovery()
-            request = _make_request({"Posit-Connect-User-Session-Token": "session-token-abc"})
+            request = _make_request(
+                {"Posit-Connect-User-Session-Token": "session-token-abc"}
+            )
 
             list(discovery.stream_table_names(request))
             list(discovery.stream_table_names(request))
@@ -278,7 +298,9 @@ class TestEnsurePinLoaded:
 
             mock_session = MagicMock()
             mock_session.tables = []
-            discovery.ensure_pin_loaded("session-1", "alice__data", request, mock_session)
+            discovery.ensure_pin_loaded(
+                "session-1", "alice__data", request, mock_session
+            )
 
         mock_board.pin_read.assert_called_once_with("alice/data")
         mock_session.duckdb.register.assert_called_once()
@@ -305,7 +327,9 @@ class TestEnsurePinLoaded:
 
             mock_session = MagicMock()
             mock_session.tables = []
-            discovery.ensure_pin_loaded("session-1", "alice__data", request, mock_session)
+            discovery.ensure_pin_loaded(
+                "session-1", "alice__data", request, mock_session
+            )
 
         mock_board.pin_read.assert_not_called()
         mock_session.duckdb.register.assert_not_called()
@@ -322,14 +346,18 @@ class TestEnsurePinLoaded:
 
             mock_session = MagicMock()
             with pytest.raises(KeyError, match="not found"):
-                discovery.ensure_pin_loaded("session-1", "nonexistent", request, mock_session)
+                discovery.ensure_pin_loaded(
+                    "session-1", "nonexistent", request, mock_session
+                )
 
 
 class TestGetPinSchema:
     def test_parquet_schema_only(self, tmp_path):
         """Reads schema without loading full data."""
         parquet_path = tmp_path / "data.parquet"
-        pl.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]}).write_parquet(parquet_path)
+        pl.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]}).write_parquet(
+            parquet_path
+        )
 
         mock_board = MagicMock()
         mock_board.pin_download.return_value = [str(parquet_path)]
@@ -339,7 +367,9 @@ class TestGetPinSchema:
             patch.dict(os.environ, _TEST_ENV),
         ):
             discovery = PinsDiscovery()
-            discovery._discovered_pins[_TEST_API_KEY] = [PinEntry("alice__data", "alice/data")]
+            discovery._discovered_pins[_TEST_API_KEY] = [
+                PinEntry("alice__data", "alice/data")
+            ]
             request = _make_request()
 
             columns = discovery.get_pin_schema("alice__data", request)
@@ -363,7 +393,9 @@ class TestGetPinSchema:
             patch.dict(os.environ, _TEST_ENV),
         ):
             discovery = PinsDiscovery()
-            discovery._discovered_pins[_TEST_API_KEY] = [PinEntry("alice__data", "alice/data")]
+            discovery._discovered_pins[_TEST_API_KEY] = [
+                PinEntry("alice__data", "alice/data")
+            ]
             request = _make_request()
 
             columns = discovery.get_pin_schema("alice__data", request)
@@ -390,7 +422,9 @@ class TestGetPinSchema:
             patch.dict(os.environ, _TEST_ENV),
         ):
             discovery = PinsDiscovery()
-            discovery._discovered_pins[_TEST_API_KEY] = [PinEntry("alice__data", "alice/data")]
+            discovery._discovered_pins[_TEST_API_KEY] = [
+                PinEntry("alice__data", "alice/data")
+            ]
             request = _make_request()
 
             columns = discovery.get_pin_schema("alice__data", request)

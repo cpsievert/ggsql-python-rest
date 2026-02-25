@@ -23,17 +23,17 @@ except ImportError:
     PositAuthenticator = None  # type: ignore[assignment, misc]
 
 try:
-    import adbc_driver_snowflake.dbapi as _snowflake_adbc
+    import adbc_driver_snowflake.dbapi as snowflake_adbc
 
-    _HAS_SNOWFLAKE_ADBC = True
+    HAS_SNOWFLAKE_ADBC = True
 except ImportError:
-    _snowflake_adbc = None  # type: ignore[assignment]
-    _HAS_SNOWFLAKE_ADBC = False
+    snowflake_adbc = None  # type: ignore[assignment]
+    HAS_SNOWFLAKE_ADBC = False
 
 from ggsql_rest._constants import SESSION_TOKEN_HEADER
 
 
-def _parse_snowflake_type(data_type_json: str) -> str:
+def parse_snowflake_type(data_type_json: str) -> str:
     """SHOW COLUMNS returns data_type as JSON, e.g.:
     {"type":"FIXED","precision":38,"scale":0,"nullable":true}
     """
@@ -291,7 +291,7 @@ class SnowflakeDiscovery:
             columns = [
                 ColumnSchema(
                     column_name=row[2],
-                    data_type=_parse_snowflake_type(row[3]),
+                    data_type=parse_snowflake_type(row[3]),
                 )
                 for row in rows
             ]
@@ -306,7 +306,7 @@ class SnowflakeDiscovery:
 
     def has_adbc_support(self) -> bool:
         """Check if ADBC Arrow Flight is available for Snowflake queries."""
-        return _HAS_SNOWFLAKE_ADBC
+        return HAS_SNOWFLAKE_ADBC
 
     def _build_adbc_params(
         self,
@@ -342,7 +342,7 @@ class SnowflakeDiscovery:
         Returns an ADBC DBAPI2 connection, or None if ADBC is unavailable
         or the auth mode doesn't support it.
         """
-        if not _HAS_SNOWFLAKE_ADBC or _snowflake_adbc is None:
+        if not HAS_SNOWFLAKE_ADBC or snowflake_adbc is None:
             return None
 
         session_token = request.headers.get(SESSION_TOKEN_HEADER)
@@ -361,7 +361,7 @@ class SnowflakeDiscovery:
         if params is None:
             return None
 
-        return _snowflake_adbc.connect(db_kwargs=params)
+        return snowflake_adbc.connect(db_kwargs=params)
 
     def dispose_all(self) -> None:
         for engine in self._engines.values():

@@ -12,7 +12,12 @@ class ConnectionRegistry:
         self._engines: OrderedDict[tuple[str, str], Engine] = OrderedDict()
         self._max_engines = max_engines
 
-    def register(self, name: str, factory: Callable[[Request], Engine], provider: str | None = None) -> None:
+    def register(
+        self,
+        name: str,
+        factory: Callable[[Request], Engine],
+        provider: str | None = None,
+    ) -> None:
         self._factories[name] = factory
         if provider is not None:
             self._providers[name] = provider

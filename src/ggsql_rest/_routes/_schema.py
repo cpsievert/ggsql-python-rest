@@ -39,12 +39,14 @@ async def schema_tables(
 
     def sort_and_dump(entries: list[TableNameEntry]):
         entries.sort(key=lambda e: e.table_name)
-        return json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
+        return (
+            json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]})
+            + "\n"
+        )
 
     def generate():
         local_tables = [
-            TableNameEntry(table_name=name, source=None)
-            for name in session.tables
+            TableNameEntry(table_name=name, source=None) for name in session.tables
         ]
         if local_tables:
             yield sort_and_dump(local_tables)

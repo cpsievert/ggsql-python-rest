@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from ._connections import ConnectionRegistry
 
 
-def _provider_from_url(url: str) -> str | None:
+def provider_from_url(url: str) -> str | None:
     # SQLAlchemy URLs: "dialect+driver://..." or "dialect://..."
     scheme = url.split("://")[0] if "://" in url else None
     if scheme is None:
@@ -19,12 +19,12 @@ def _provider_from_url(url: str) -> str | None:
 def load_connections_from_yaml(path: str | Path) -> ConnectionRegistry:
     """Expected format::
 
-        connections:
-          name:
-            url: "postgresql://..."
-            pool_size: 5          # any create_engine kwarg
-            connect_args:
-              sslmode: require
+    connections:
+      name:
+        url: "postgresql://..."
+        pool_size: 5          # any create_engine kwarg
+        connect_args:
+          sslmode: require
     """
     with open(path) as f:
         config = yaml.safe_load(f)
@@ -45,9 +45,10 @@ def load_connections_from_yaml(path: str | Path) -> ConnectionRegistry:
         def make_factory(u: str, k: dict[str, Any]):
             def factory(request):
                 return create_engine(u, **k)
+
             return factory
 
-        provider = _provider_from_url(url)
+        provider = provider_from_url(url)
         registry.register(name, make_factory(url, kwargs), provider=provider)
 
     return registry

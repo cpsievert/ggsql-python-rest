@@ -138,80 +138,80 @@ class TestParseSnowflakeType:
     """Test Snowflake JSON data_type parsing."""
 
     def test_fixed_type(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
         assert (
-            _parse_snowflake_type(
+            parse_snowflake_type(
                 '{"type":"FIXED","precision":38,"scale":0,"nullable":true}'
             )
             == "NUMBER(38,0)"
         )
 
     def test_fixed_with_scale(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
         assert (
-            _parse_snowflake_type(
+            parse_snowflake_type(
                 '{"type":"FIXED","precision":10,"scale":2,"nullable":true}'
             )
             == "NUMBER(10,2)"
         )
 
     def test_text_type(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
         assert (
-            _parse_snowflake_type(
+            parse_snowflake_type(
                 '{"type":"TEXT","length":16777216,"nullable":true,"fixed":false}'
             )
             == "VARCHAR"
         )
 
     def test_real_type(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
-        assert _parse_snowflake_type('{"type":"REAL","nullable":true}') == "FLOAT"
+        assert parse_snowflake_type('{"type":"REAL","nullable":true}') == "FLOAT"
 
     def test_date_type(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
-        assert _parse_snowflake_type('{"type":"DATE","nullable":true}') == "DATE"
+        assert parse_snowflake_type('{"type":"DATE","nullable":true}') == "DATE"
 
     def test_boolean_type(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
-        assert _parse_snowflake_type('{"type":"BOOLEAN","nullable":true}') == "BOOLEAN"
+        assert parse_snowflake_type('{"type":"BOOLEAN","nullable":true}') == "BOOLEAN"
 
     def test_timestamp_types(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
         assert (
-            _parse_snowflake_type(
+            parse_snowflake_type(
                 '{"type":"TIMESTAMP_NTZ","precision":0,"scale":9,"nullable":true}'
             )
             == "TIMESTAMP_NTZ"
         )
         assert (
-            _parse_snowflake_type(
+            parse_snowflake_type(
                 '{"type":"TIMESTAMP_LTZ","precision":0,"scale":9,"nullable":true}'
             )
             == "TIMESTAMP_LTZ"
         )
 
     def test_variant_type(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
-        assert _parse_snowflake_type('{"type":"VARIANT","nullable":true}') == "VARIANT"
+        assert parse_snowflake_type('{"type":"VARIANT","nullable":true}') == "VARIANT"
 
     def test_invalid_json_returns_varchar(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
-        assert _parse_snowflake_type("not-json") == "VARCHAR"
+        assert parse_snowflake_type("not-json") == "VARCHAR"
 
     def test_missing_type_key(self):
-        from ggsql_rest._snowflake import _parse_snowflake_type
+        from ggsql_rest._snowflake import parse_snowflake_type
 
-        assert _parse_snowflake_type('{"nullable":true}') == "VARCHAR"
+        assert parse_snowflake_type('{"nullable":true}') == "VARCHAR"
 
 
 class TestStreamTableNames:
@@ -623,7 +623,7 @@ class TestAdbcSupport:
 
     def test_has_adbc_support_reflects_import(self, monkeypatch):
         """has_adbc_support returns False when ADBC driver is unavailable."""
-        monkeypatch.setattr("ggsql_rest._snowflake._HAS_SNOWFLAKE_ADBC", False)
+        monkeypatch.setattr("ggsql_rest._snowflake.HAS_SNOWFLAKE_ADBC", False)
 
         discovery = SnowflakeDiscovery(
             account="test_account",

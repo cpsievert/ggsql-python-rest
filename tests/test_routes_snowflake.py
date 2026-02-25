@@ -28,5 +28,3 @@ def create_test_app_with_snowflake(
     app.include_router(schema_router)
     register_error_handlers(app)
     return app, session_mgr
-
-

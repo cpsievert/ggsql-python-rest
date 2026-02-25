@@ -36,7 +36,7 @@ def fetch_remote_into_duckdb(
 
     if cx_url is not None:
         try:
-            df = execute_via_connectorx(cx_url, sql, max_rows=None)
+            df = execute_via_connectorx(cx_url, sql, row_limit=None)
             session.duckdb.register(table_name, df)
             return
         except Exception:

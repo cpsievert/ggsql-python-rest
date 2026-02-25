@@ -112,11 +112,11 @@ class TestGetEngine:
         }
 
         mock_engine = MagicMock()
-        with patch.object(discovery, "_create_engine", return_value=mock_engine):
+        with patch.object(discovery, "_create_engine", return_value=mock_engine) as mock_create:
             engine = discovery.get_engine("DB1.PUBLIC", request)
 
             assert engine is mock_engine
-            discovery._create_engine.assert_called_once()
+            mock_create.assert_called_once()
 
     def test_get_engine_unknown_connection_raises(self):
         """get_engine() raises KeyError for unknown connection."""

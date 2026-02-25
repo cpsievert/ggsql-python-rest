@@ -28,7 +28,7 @@ jobs:
         run: npm install -g tree-sitter-cli
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Type check
         run: uv run pyright

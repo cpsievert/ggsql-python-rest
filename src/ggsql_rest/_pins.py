@@ -48,7 +48,8 @@ class PinsDiscovery:
         """
         from posit.connect import Client
 
-        client = Client(api_key=api_key)
+        server_url = os.environ.get("CONNECT_SERVER")
+        client = Client(server_url, api_key) if server_url else Client()
 
         users = client.users.find()
         user_map: dict[str, str] = {u["guid"]: u["username"] for u in users}

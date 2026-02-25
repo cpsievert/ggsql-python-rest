@@ -112,7 +112,8 @@ class PinsDiscovery:
 
         api_key = self._resolve_api_key(request)
         board = make_board(api_key)
-        df = board.pin_read(pin.original)
+        pandas_df = board.pin_read(pin.original)
+        df = pl.from_pandas(pandas_df)
 
         session.duckdb.register(table_name, df)
         session.tables.append(table_name)

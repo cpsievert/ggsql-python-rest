@@ -323,3 +323,22 @@ def test_fetch_remote_into_duckdb_pushes_limit_to_db(monkeypatch):
     assert any("LIMIT" in sql.upper() for sql in executed_sqls), (
         f"Expected LIMIT in SQL, got: {executed_sqls}"
     )
+
+
+def test_execute_sql_passes_timeout(monkeypatch):
+    """execute_sql should pass timeout_seconds through to execute_remote."""
+    monkeypatch.setattr("ggsql_rest._query.HAS_CONNECTORX", False)
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (id INTEGER)"))
+        conn.execute(text("INSERT INTO t VALUES (1)"))
+
+    session = Session("test", timeout_mins=30)
+    # Should not raise — timeout_seconds is accepted and passed through
+    result = execute_sql("SELECT * FROM t", session, engine=engine, timeout_seconds=5)
+    assert len(result["rows"]) == 1

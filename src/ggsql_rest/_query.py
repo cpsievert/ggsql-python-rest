@@ -211,9 +211,12 @@ def execute_sql(
     session: Session,
     engine: Engine | None = None,
     max_rows: int = 10000,
+    timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
     if engine is not None:
-        df = execute_remote(engine, query, max_rows=max_rows)
+        df = execute_remote(
+            engine, query, max_rows=max_rows, timeout_seconds=timeout_seconds
+        )
     else:
         df = session.duckdb.execute_sql(query)
 

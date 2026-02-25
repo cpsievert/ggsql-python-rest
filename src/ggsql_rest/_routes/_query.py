@@ -75,6 +75,8 @@ async def sql(
         else:
             engine = resolve_engine(body.source, request, registry, snowflake)
 
-    result = execute_sql(body.query, session, engine)
+    result = execute_sql(
+        body.query, session, engine, timeout_seconds=body.timeout_seconds
+    )
 
     return success_envelope(SqlResponse(**result))

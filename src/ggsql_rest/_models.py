@@ -24,6 +24,7 @@ class QueryRequest(CamelModel):
 class SqlRequest(CamelModel):
     query: str
     source: str | None = None
+    timeout_seconds: int | None = None
 
 
 class SessionResponse(CamelModel):

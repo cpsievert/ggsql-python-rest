@@ -3,7 +3,8 @@
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import StaticPool
 
 from ggsql_rest._errors import register_error_handlers
 from ggsql_rest._sessions import SessionManager
@@ -156,3 +157,35 @@ async def test_sql_database_error_returns_502():
         body = response.json()
         assert body["status"] == "error"
         assert body["error"]["type"] == "DatabaseError"
+
+
+@pytest.mark.anyio
+async def test_sql_accepts_timeout_seconds():
+    """The /sql endpoint should accept an optional timeoutSeconds parameter."""
+    app, session_mgr, registry = create_test_app()
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE t (id INTEGER)"))
+        conn.execute(text("INSERT INTO t VALUES (1)"))
+
+    registry.register("test_db", lambda _req: engine)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/sessions")
+        session_id = create_resp.json()["data"]["sessionId"]
+
+        response = await client.post(
+            f"/sessions/{session_id}/sql",
+            json={
+                "query": "SELECT * FROM t",
+                "source": "test_db",
+                "timeoutSeconds": 30,
+            },
+        )
+        assert response.status_code == 200

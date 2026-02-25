@@ -74,8 +74,8 @@ async def test_schema_works_without_snowflake():
 
 
 @pytest.mark.anyio
-async def test_schema_skip_snowflake():
-    """Schema endpoint with skip_snowflake=true excludes Snowflake tables."""
+async def test_schema_skip_slow_discovery():
+    """Schema endpoint with skip_slow_discovery=true excludes slow-discovery tables."""
     mock_snowflake = MagicMock(spec=SnowflakeDiscovery)
     mock_snowflake.get_tables.return_value = [
         TableSchema(
@@ -89,7 +89,7 @@ async def test_schema_skip_snowflake():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         session = session_mgr.create()
         response = await client.get(
-            f"/sessions/{session.id}/schema?skip_snowflake=true"
+            f"/sessions/{session.id}/schema?skip_slow_discovery=true"
         )
         assert response.status_code == 200
         tables = response.json()["data"]["tables"]

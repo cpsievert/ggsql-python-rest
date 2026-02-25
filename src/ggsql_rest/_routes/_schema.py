@@ -20,7 +20,7 @@ router = APIRouter(prefix="/sessions/{session_id}", tags=["schema"])
 @router.get("/schema/tables", response_model=None)
 async def schema_tables(
     request: Request,
-    skip_snowflake: bool = False,
+    skip_slow_discovery: bool = False,
     stream: bool = False,
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
@@ -46,11 +46,11 @@ async def schema_tables(
     if not stream:
         # Original non-streaming path
         tables = list(local_tables)
-        if snowflake is not None and not skip_snowflake:
+        if snowflake is not None and not skip_slow_discovery:
             snowflake_table_names = snowflake.get_table_names(request)
             for table_name, connection_name in snowflake_table_names:
                 tables.append(TableNameEntry(table_name=table_name, connection=connection_name, provider="snowflake"))
-        if pins is not None:
+        if pins is not None and not skip_slow_discovery:
             for owner, table_names in pins.stream_table_names(request):
                 for table_name in table_names:
                     tables.append(TableNameEntry(table_name=table_name, connection=owner, provider="pins"))
@@ -64,7 +64,7 @@ async def schema_tables(
             yield json.dumps(line) + "\n"
 
         # Subsequent lines: Snowflake tables per-database
-        if snowflake is not None and not skip_snowflake:
+        if snowflake is not None and not skip_slow_discovery:
             for _db_name, batch in snowflake.stream_table_names(request):
                 entries = [
                     TableNameEntry(table_name=tn, connection=cn, provider="snowflake")
@@ -90,7 +90,7 @@ async def schema_tables(
 async def schema(
     request: Request,
     include_stats: bool = False,
-    skip_snowflake: bool = False,
+    skip_slow_discovery: bool = False,
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
@@ -112,7 +112,7 @@ async def schema(
         tables.extend(remote_tables)
 
     # Snowflake tables (if configured and not skipped)
-    if snowflake is not None and not skip_snowflake:
+    if snowflake is not None and not skip_slow_discovery:
         snowflake_tables = snowflake.get_tables(request, include_stats)
         tables.extend(snowflake_tables)
 

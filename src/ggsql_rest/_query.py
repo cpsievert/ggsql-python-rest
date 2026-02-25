@@ -26,10 +26,11 @@ def fetch_remote_into_duckdb(
     session: Session,
     table_name: str,
     max_rows: int | None = None,
+    adbc_conn: Any | None = None,
 ) -> bool:
     """Fetch remote SQL results and register them in session's DuckDB.
 
-    When connectorx is available, fetches as a single Arrow DataFrame (zero-copy).
+    When ADBC or connectorx is available, fetches as a single Arrow DataFrame (zero-copy).
     Otherwise, streams chunks via server-side cursor to bound memory usage.
 
     Returns True if result was truncated to max_rows, False otherwise.
@@ -39,14 +40,29 @@ def fetch_remote_into_duckdb(
     # Fetch one extra row to detect truncation
     fetch_limit = max_rows + 1 if max_rows is not None else None
 
+    # Build LIMIT SQL once upfront
+    if fetch_limit is not None:
+        fetch_sql = f"SELECT * FROM ({sql}) AS _limited LIMIT {fetch_limit}"
+    else:
+        fetch_sql = sql
+
+    # 1. ADBC path (Arrow Flight)
+    if adbc_conn is not None:
+        try:
+            df = execute_via_adbc(adbc_conn, fetch_sql, row_limit=None)
+            if max_rows is not None and len(df) > max_rows:
+                truncated = True
+                df = df.head(max_rows)
+            session.duckdb.register(table_name, df)
+            return truncated
+        except Exception:
+            pass  # Fall through
+
+    # 2. ConnectorX path
     cx_url = connectorx_supported_url(engine) if HAS_CONNECTORX else None
 
     if cx_url is not None:
         try:
-            if fetch_limit is not None:
-                fetch_sql = f"SELECT * FROM ({sql}) AS _limited LIMIT {fetch_limit}"
-            else:
-                fetch_sql = sql
             df = execute_via_connectorx(cx_url, fetch_sql, row_limit=None)
 
             # Check for truncation

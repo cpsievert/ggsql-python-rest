@@ -465,3 +465,35 @@ def test_execute_ggsql_local_not_truncated():
         engine=None,
     )
     assert result["metadata"]["truncated"] is False
+
+
+def test_fetch_remote_into_duckdb_uses_adbc():
+    """fetch_remote_into_duckdb should use ADBC when provided."""
+    from unittest.mock import MagicMock
+
+    pa = pytest.importorskip("pyarrow")
+
+    arrow_table = pa.table({"x": [1, 2, 3], "y": [4, 5, 6]})
+    mock_cursor = MagicMock()
+    mock_cursor.fetch_arrow_table.return_value = arrow_table
+    mock_cursor.description = [("x",), ("y",)]
+
+    mock_adbc_conn = MagicMock()
+    mock_adbc_conn.cursor.return_value = mock_cursor
+
+    mock_engine = MagicMock()
+    session = Session("test", timeout_mins=30)
+
+    truncated = fetch_remote_into_duckdb(
+        mock_engine,
+        "SELECT * FROM t",
+        session,
+        "test_table",
+        adbc_conn=mock_adbc_conn,
+    )
+    assert truncated is False
+    mock_engine.connect.assert_not_called()
+
+    # Verify data landed in DuckDB
+    result = session.duckdb.execute_sql("SELECT * FROM test_table")
+    assert len(result) == 3

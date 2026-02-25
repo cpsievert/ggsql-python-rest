@@ -8,9 +8,7 @@ from fastapi.responses import StreamingResponse
 from .._connections import ConnectionRegistry
 from .._models import (
     ColumnSchema,
-    SchemaResponse,
     TableNameEntry,
-    TableNamesResponse,
     TableSchema,
     success_envelope,
 )
@@ -18,7 +16,6 @@ from .._schema import (
     get_local_table_schema,
     get_remote_single_table_schema,
     get_remote_table_names,
-    get_remote_table_schemas,
 )
 from .._sessions import Session
 from .._snowflake import SnowflakeDiscovery
@@ -32,72 +29,36 @@ router = APIRouter(prefix="/sessions/{session_id}", tags=["schema"])
 @router.get("/schema/tables", response_model=None)
 async def schema_tables(
     request: Request,
-    skip_slow_discovery: bool = False,
-    stream: bool = False,
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
     pins: PinsDiscovery | None = Depends(get_pins_discovery),
-) -> dict | StreamingResponse:
-    """Return table names for all available tables (local + remote) without columns."""
-    # Local + remote tables (always instant)
-    local_tables: list[TableNameEntry] = []
+) -> StreamingResponse:
+    """Return table names for all available tables (local + remote) without columns.
 
-    # Local tables from session's DuckDB
-    for table_name in session.tables:
-        local_tables.append(TableNameEntry(table_name=table_name, source=None))
+    Always returns NDJSON format (application/x-ndjson).
+    Discovery order: local DuckDB → registered connections → pins → snowflake
+    """
 
-    # Remote tables from each registered connection
-    for conn_name in registry.list_connections():
-        engine = registry.get_engine(conn_name, request)
-        remote_table_names = get_remote_table_names(engine)
-        provider = registry.get_provider(conn_name)
-        for table_name in remote_table_names:
-            local_tables.append(
-                TableNameEntry(
-                    table_name=table_name, source=conn_name, provider=provider
-                )
-            )
-
-    if not stream:
-        # Original non-streaming path
-        tables = list(local_tables)
-        if snowflake is not None and not skip_slow_discovery:
-            snowflake_table_names = snowflake.get_table_names(request)
-            for table_name, connection_name in snowflake_table_names:
-                tables.append(
-                    TableNameEntry(
-                        table_name=table_name,
-                        source=connection_name,
-                        provider="snowflake",
-                    )
-                )
-        if pins is not None and not skip_slow_discovery:
-            for owner, table_names in pins.stream_table_names(request):
-                for table_name in table_names:
-                    tables.append(
-                        TableNameEntry(
-                            table_name=table_name, source=owner, provider="pins"
-                        )
-                    )
-        return success_envelope(TableNamesResponse(tables=tables))
-
-    # Streaming path: NDJSON
     def generate():
-        # First line: local + remote tables
+        # Local DuckDB tables (instant)
+        local_tables = [
+            TableNameEntry(table_name=name, source=None)
+            for name in session.tables
+        ]
         if local_tables:
-            line = {"tables": [t.model_dump(by_alias=True) for t in local_tables]}
-            yield json.dumps(line) + "\n"
+            yield json.dumps({"tables": [t.model_dump(by_alias=True) for t in local_tables]}) + "\n"
 
-        # Subsequent lines: Snowflake tables per-database
-        if snowflake is not None and not skip_slow_discovery:
-            for _db_name, batch in snowflake.stream_table_names(request):
-                entries = [
-                    TableNameEntry(table_name=tn, source=cn, provider="snowflake")
-                    for tn, cn in batch
-                ]
-                line = {"tables": [e.model_dump(by_alias=True) for e in entries]}
-                yield json.dumps(line) + "\n"
+        # Registered connections (one batch per connection)
+        for conn_name in registry.list_connections():
+            engine = registry.get_engine(conn_name, request)
+            provider = registry.get_provider(conn_name)
+            entries = [
+                TableNameEntry(table_name=name, source=conn_name, provider=provider)
+                for name in get_remote_table_names(engine)
+            ]
+            if entries:
+                yield json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
 
         # Pins tables (one batch per owner)
         if pins is not None:
@@ -106,41 +67,18 @@ async def schema_tables(
                     TableNameEntry(table_name=tn, source=owner, provider="pins")
                     for tn in table_names
                 ]
-                line = {"tables": [e.model_dump(by_alias=True) for e in entries]}
-                yield json.dumps(line) + "\n"
+                yield json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
+
+        # Snowflake tables (one batch per database)
+        if snowflake is not None:
+            for _db_name, batch in snowflake.stream_table_names(request):
+                entries = [
+                    TableNameEntry(table_name=tn, source=cn, provider="snowflake")
+                    for tn, cn in batch
+                ]
+                yield json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
-
-
-@router.get("/schema")
-async def schema(
-    request: Request,
-    include_stats: bool = False,
-    skip_slow_discovery: bool = False,
-    session: Session = Depends(get_session),
-    registry: ConnectionRegistry = Depends(get_registry),
-    snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
-) -> dict:
-    """Return schema for all available tables (local + remote)."""
-    tables = []
-
-    # Local tables from session's DuckDB
-    for table_name in session.tables:
-        table_schema = get_local_table_schema(session.duckdb, table_name, include_stats)
-        tables.append(table_schema)
-
-    # Remote tables from each registered connection
-    for conn_name in registry.list_connections():
-        engine = registry.get_engine(conn_name, request)
-        remote_tables = get_remote_table_schemas(engine, conn_name, include_stats)
-        tables.extend(remote_tables)
-
-    # Snowflake tables (if configured and not skipped)
-    if snowflake is not None and not skip_slow_discovery:
-        snowflake_tables = snowflake.get_tables(request, include_stats)
-        tables.extend(snowflake_tables)
-
-    return success_envelope(SchemaResponse(tables=tables))
 
 
 @router.get("/schema/table/{table_name}")

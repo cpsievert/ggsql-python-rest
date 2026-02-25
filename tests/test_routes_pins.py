@@ -70,7 +70,7 @@ async def test_streaming_schema_includes_pins(app_with_pins):
 
 @pytest.mark.anyio
 async def test_non_streaming_schema_includes_pins(app_with_pins):
-    """Non-streaming /schema/tables should include pins."""
+    """/schema/tables (now always NDJSON) should include pins."""
     with patch.dict(os.environ, _TEST_ENV):
         async with AsyncClient(
             transport=ASGITransport(app=app_with_pins), base_url="http://test"
@@ -82,8 +82,16 @@ async def test_non_streaming_schema_includes_pins(app_with_pins):
                 f"/api/v1/sessions/{session_id}/schema/tables"
             )
             assert resp.status_code == 200
-            data = resp.json()["data"]
-            pin_tables = [t for t in data["tables"] if t.get("provider") == "pins"]
+            assert resp.headers["content-type"] == "application/x-ndjson"
+
+            # Parse NDJSON lines and collect all tables
+            lines = resp.text.strip().split("\n")
+            all_tables = []
+            for line in lines:
+                batch = json.loads(line)
+                all_tables.extend(batch["tables"])
+
+            pin_tables = [t for t in all_tables if t.get("provider") == "pins"]
             assert len(pin_tables) == 3
 
 

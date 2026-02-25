@@ -35,109 +35,6 @@ def create_test_app(registry: ConnectionRegistry) -> tuple[FastAPI, SessionManag
 
 
 @pytest.mark.anyio
-async def test_schema_local_table():
-    """Schema returns uploaded table columns."""
-    app, session_mgr = create_test_app(ConnectionRegistry())
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        session = session_mgr.create()
-
-        csv_content = b"x,y,label\n1,10,a\n2,20,b\n3,30,a"
-        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
-        await client.post(f"/sessions/{session.id}/upload", files=files)
-
-        response = await client.get(f"/sessions/{session.id}/schema")
-
-        assert response.status_code == 200
-        body = response.json()
-        assert body["status"] == "success"
-        tables = body["data"]["tables"]
-        assert len(tables) == 1
-        assert tables[0]["tableName"] == "data"
-        assert tables[0]["source"] is None
-        assert len(tables[0]["columns"]) == 3
-
-
-@pytest.mark.anyio
-async def test_schema_with_stats():
-    """Schema with include_stats returns column statistics."""
-    app, session_mgr = create_test_app(ConnectionRegistry())
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        session = session_mgr.create()
-
-        csv_content = b"score,category\n10,A\n20,B\n30,A"
-        files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
-        await client.post(f"/sessions/{session.id}/upload", files=files)
-
-        response = await client.get(
-            f"/sessions/{session.id}/schema?include_stats=true"
-        )
-
-        assert response.status_code == 200
-        tables = response.json()["data"]["tables"]
-        columns = {c["columnName"]: c for c in tables[0]["columns"]}
-
-        # Numeric column should have min/max
-        assert columns["score"]["minValue"] is not None
-        assert columns["score"]["maxValue"] is not None
-
-
-@pytest.mark.anyio
-async def test_schema_with_remote_connection():
-    """Schema includes tables from remote connections."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    with engine.begin() as conn:
-        conn.execute(text("CREATE TABLE users (id INTEGER, name TEXT)"))
-        conn.execute(text("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')"))
-
-    registry = ConnectionRegistry()
-    registry.register("test_db", lambda _req: engine)
-
-    app, session_mgr = create_test_app(registry)
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        session = session_mgr.create()
-
-        response = await client.get(f"/sessions/{session.id}/schema")
-
-        assert response.status_code == 200
-        tables = response.json()["data"]["tables"]
-
-        remote_tables = [t for t in tables if t["source"] == "test_db"]
-        assert len(remote_tables) == 1
-        assert remote_tables[0]["tableName"] == "users"
-
-
-@pytest.mark.anyio
-async def test_schema_empty_session():
-    """Schema with no tables returns empty list."""
-    app, session_mgr = create_test_app(ConnectionRegistry())
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        session = session_mgr.create()
-
-        response = await client.get(f"/sessions/{session.id}/schema")
-
-        assert response.status_code == 200
-        assert response.json()["data"]["tables"] == []
-
-
-@pytest.mark.anyio
-async def test_schema_session_not_found():
-    """Schema for nonexistent session returns 404."""
-    app, _ = create_test_app(ConnectionRegistry())
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/sessions/nonexistent/schema")
-        assert response.status_code == 404
-
-
-@pytest.mark.anyio
 async def test_schema_tables_local():
     """Schema tables endpoint returns just table names without columns."""
     app, session_mgr = create_test_app(ConnectionRegistry())
@@ -150,13 +47,19 @@ async def test_schema_tables_local():
         files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
         await client.post(f"/sessions/{session.id}/upload", files=files)
 
-        # Request table names
+        # Request table names (now always NDJSON)
         response = await client.get(f"/sessions/{session.id}/schema/tables")
 
         assert response.status_code == 200
-        body = response.json()
-        assert body["status"] == "success"
-        tables = body["data"]["tables"]
+        assert response.headers["content-type"] == "application/x-ndjson"
+
+        # Parse NDJSON lines
+        lines = response.text.strip().split("\n")
+        assert len(lines) == 1
+
+        first_line = json.loads(lines[0])
+        assert "tables" in first_line
+        tables = first_line["tables"]
         assert len(tables) == 1
         assert tables[0]["tableName"] == "data"
         assert tables[0]["source"] is None
@@ -185,11 +88,18 @@ async def test_schema_tables_with_remote():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         session = session_mgr.create()
 
-        # Request table names
+        # Request table names (now always NDJSON)
         response = await client.get(f"/sessions/{session.id}/schema/tables")
 
         assert response.status_code == 200
-        tables = response.json()["data"]["tables"]
+        assert response.headers["content-type"] == "application/x-ndjson"
+
+        # Parse NDJSON lines
+        lines = response.text.strip().split("\n")
+        assert len(lines) == 1
+
+        first_line = json.loads(lines[0])
+        tables = first_line["tables"]
 
         # Find the remote table
         remote_tables = [t for t in tables if t["source"] == "test_db"]
@@ -410,19 +320,25 @@ async def test_schema_tables_includes_provider():
         files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
         await client.post(f"/sessions/{session.id}/upload", files=files)
 
-        # Request table names
+        # Request table names (now always NDJSON)
         response = await client.get(f"/sessions/{session.id}/schema/tables")
 
         assert response.status_code == 200
-        tables = response.json()["data"]["tables"]
+        assert response.headers["content-type"] == "application/x-ndjson"
+
+        # Parse NDJSON lines — local and connection tables are separate batches
+        lines = response.text.strip().split("\n")
+        all_tables = []
+        for line in lines:
+            all_tables.extend(json.loads(line)["tables"])
 
         # Local table should have provider=None
-        local_tables = [t for t in tables if t["source"] is None]
+        local_tables = [t for t in all_tables if t["source"] is None]
         assert len(local_tables) == 1
         assert local_tables[0]["provider"] is None
 
         # Remote table should have provider="sqlite"
-        remote_tables = [t for t in tables if t["source"] == "test_db"]
+        remote_tables = [t for t in all_tables if t["source"] == "test_db"]
         assert len(remote_tables) == 1
         assert remote_tables[0]["provider"] == "sqlite"
 
@@ -453,25 +369,24 @@ async def test_schema_tables_stream_includes_provider():
         files = {"file": ("data.csv", io.BytesIO(csv_content), "text/csv")}
         await client.post(f"/sessions/{session.id}/upload", files=files)
 
-        # Request streaming table names
+        # Request table names (stream=true is ignored, always NDJSON)
         response = await client.get(f"/sessions/{session.id}/schema/tables?stream=true")
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/x-ndjson"
 
-        # Parse NDJSON lines
+        # Parse NDJSON lines — local and connection tables are separate batches
         lines = response.text.strip().split("\n")
-        assert len(lines) == 1
-
-        first_line = json.loads(lines[0])
-        tables = first_line["tables"]
+        all_tables = []
+        for line in lines:
+            all_tables.extend(json.loads(line)["tables"])
 
         # Local table should have provider=None
-        local_tables = [t for t in tables if t["source"] is None]
+        local_tables = [t for t in all_tables if t["source"] is None]
         assert len(local_tables) == 1
         assert local_tables[0]["provider"] is None
 
         # Remote table should have provider="sqlite"
-        remote_tables = [t for t in tables if t["source"] == "test_db"]
+        remote_tables = [t for t in all_tables if t["source"] == "test_db"]
         assert len(remote_tables) == 1
         assert remote_tables[0]["provider"] == "sqlite"

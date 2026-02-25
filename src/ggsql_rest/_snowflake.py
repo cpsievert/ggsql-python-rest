@@ -84,8 +84,6 @@ class SnowflakeDiscovery:
 
         # Per-user caches: user_id -> discovered connections
         self._discovered_connections: dict[str, dict[str, tuple[str, str]]] = {}
-        # Per-user caches: user_id -> discovered tables
-        self._discovered_tables: dict[str, list[TableSchema]] = {}
         # Per-user catalog cache: user_id -> list of (conn_name, db, schema, table_name)
         self._discovered_catalog: dict[str, list[tuple[str, str, str, str]]] = {}
         # Engine cache: (user_id, connection_name) -> Engine
@@ -137,52 +135,6 @@ class SnowflakeDiscovery:
 
         return snowflake_connector.connect(**kwargs)
 
-    def _discover_catalog(
-        self,
-        conn: SnowflakeConnection,
-    ) -> list[tuple[str, str, str, str]]:
-        """Discover all accessible databases, schemas, and tables.
-
-        Returns list of (connection_name, database, schema, table_name) tuples.
-        Skips INFORMATION_SCHEMA and databases that error on access.
-        """
-        results: list[tuple[str, str, str, str]] = []
-        cursor = conn.cursor()
-
-        if self.databases:
-            # Use specified databases (skip SHOW DATABASES)
-            db_names = self.databases
-        else:
-            cursor.execute("SHOW DATABASES")
-            db_names = [row[1] for row in cursor.fetchall()]
-
-        for db_name in db_names:
-
-            try:
-                cursor.execute(f'SHOW SCHEMAS IN DATABASE "{db_name}"')
-                schemas = cursor.fetchall()
-            except Exception:
-                continue  # Skip inaccessible databases
-
-            for schema_row in schemas:
-                schema_name = schema_row[1]
-
-                if schema_name == "INFORMATION_SCHEMA":
-                    continue
-
-                conn_name = f"{db_name}.{schema_name}"
-
-                try:
-                    cursor.execute(f'SHOW TABLES IN SCHEMA "{db_name}"."{schema_name}"')
-                    tables = cursor.fetchall()
-                except Exception:
-                    continue  # Skip inaccessible schemas
-
-                for table_row in tables:
-                    table_name = table_row[1]
-                    results.append((conn_name, db_name, schema_name, table_name))
-
-        return results
 
     def _discover_catalog_by_database(
         self,
@@ -205,72 +157,22 @@ class SnowflakeDiscovery:
             db_entries: list[tuple[str, str, str, str]] = []
 
             try:
-                cursor.execute(f'SHOW SCHEMAS IN DATABASE "{db_name}"')
-                schemas = cursor.fetchall()
+                cursor.execute(f'SHOW TABLES IN DATABASE "{db_name}"')
+                tables = cursor.fetchall()
             except Exception:
                 continue
 
-            for schema_row in schemas:
-                schema_name = schema_row[1]
+            for table_row in tables:
+                table_name = table_row[1]
+                schema_name = table_row[3]
                 if schema_name == "INFORMATION_SCHEMA":
                     continue
-
                 conn_name = f"{db_name}.{schema_name}"
-
-                try:
-                    cursor.execute(
-                        f'SHOW TABLES IN SCHEMA "{db_name}"."{schema_name}"'
-                    )
-                    tables = cursor.fetchall()
-                except Exception:
-                    continue
-
-                for table_row in tables:
-                    table_name = table_row[1]
-                    db_entries.append((conn_name, db_name, schema_name, table_name))
+                db_entries.append((conn_name, db_name, schema_name, table_name))
 
             if db_entries:
                 yield db_name, db_entries
 
-    def _discover_columns(
-        self,
-        conn: SnowflakeConnection,
-        databases: list[str],
-    ) -> dict[tuple[str, str, str], list[tuple[str, str]]]:
-        """Discover columns for all tables using SHOW COLUMNS IN DATABASE.
-
-        Args:
-            conn: Active Snowflake connection.
-            databases: List of database names to query.
-
-        Returns:
-            Dict mapping (database, schema, table) -> [(column_name, data_type), ...]
-        """
-        columns: dict[tuple[str, str, str], list[tuple[str, str]]] = {}
-        cursor = conn.cursor()
-
-        for db_name in databases:
-            try:
-                cursor.execute(f'SHOW COLUMNS IN DATABASE "{db_name}"')
-                rows = cursor.fetchall()
-            except Exception:
-                continue
-
-            for row in rows:
-                table_name = row[0]
-                schema_name = row[1]
-                col_name = row[2]
-                data_type_json = row[3]
-
-                if schema_name == "INFORMATION_SCHEMA":
-                    continue
-
-                key = (db_name, schema_name, table_name)
-                if key not in columns:
-                    columns[key] = []
-                columns[key].append((col_name, _parse_snowflake_type(data_type_json)))
-
-        return columns
 
     def _extract_user_id(self, request: Request) -> str:
         """Extract user ID from request headers."""
@@ -315,47 +217,6 @@ class SnowflakeDiscovery:
 
         return engine
 
-    def get_table_names(
-        self,
-        request: Request,
-    ) -> list[tuple[str, str]]:
-        """Get table names and connection names for all accessible tables.
-
-        This is a fast path that skips column introspection. Used for the
-        listTables LLM tool.
-
-        Returns:
-            List of (table_name, connection_name) tuples.
-        """
-        user_id = self._extract_user_id(request)
-
-        # Return cached catalog if already discovered for this user
-        if user_id in self._discovered_catalog:
-            catalog_data = self._discovered_catalog[user_id]
-        else:
-            # Open a connection and discover catalog
-            conn = self._create_connection(request)
-            try:
-                catalog_data = self._discover_catalog(conn)
-            finally:
-                conn.close()
-
-            # Cache the catalog data
-            self._discovered_catalog[user_id] = catalog_data
-
-            # Also populate connections cache from catalog data
-            connections: dict[str, tuple[str, str]] = {}
-            for conn_name, database, schema, _table_name in catalog_data:
-                if conn_name not in connections:
-                    connections[conn_name] = (database, schema)
-            self._discovered_connections[user_id] = connections
-
-        # Build result list of (table_name, connection_name) tuples
-        result: list[tuple[str, str]] = []
-        for conn_name, _database, _schema, table_name in catalog_data:
-            result.append((table_name, conn_name))
-
-        return result
 
     def stream_table_names(
         self,
@@ -404,68 +265,6 @@ class SnowflakeDiscovery:
         finally:
             conn.close()
 
-    def get_tables(
-        self,
-        request: Request,
-        include_stats: bool,
-    ) -> list[TableSchema]:
-        """Get table schemas for all connections the user has access to.
-
-        Uses SHOW COLUMNS IN DATABASE to get column metadata from the
-        existing discovery connection, avoiding per-schema engine creation.
-        """
-        user_id = self._extract_user_id(request)
-
-        # Return cached tables if already discovered for this user
-        if user_id in self._discovered_tables:
-            return self._discovered_tables[user_id]
-
-        # Open a single connection for all discovery
-        conn = self._create_connection(request)
-        try:
-            catalog_data = self._discover_catalog(conn)
-
-            # Build connections dict and collect metadata
-            connections: dict[str, tuple[str, str]] = {}
-            databases: set[str] = set()
-            table_connections: dict[tuple[str, str, str], str] = {}
-
-            for conn_name, database, schema, table_name in catalog_data:
-                if conn_name not in connections:
-                    connections[conn_name] = (database, schema)
-                databases.add(database)
-                table_connections[(database, schema, table_name)] = conn_name
-
-            # Get all columns via SHOW COLUMNS IN DATABASE
-            all_columns = self._discover_columns(conn, sorted(databases))
-        finally:
-            conn.close()
-
-        # Build TableSchema objects
-        from ._models import ColumnSchema, TableSchema
-
-        all_tables: list[TableSchema] = []
-        for (db, schema, table), cols in all_columns.items():
-            conn_name = table_connections.get((db, schema, table))
-            if conn_name is None:
-                continue  # Column for a table not in our catalog (e.g., views)
-
-            all_tables.append(
-                TableSchema(
-                    table_name=table,
-                    source=conn_name,
-                    columns=[
-                        ColumnSchema(column_name=name, data_type=dtype)
-                        for name, dtype in cols
-                    ],
-                )
-            )
-
-        # Cache results
-        self._discovered_connections[user_id] = connections
-        self._discovered_tables[user_id] = all_tables
-
-        return all_tables
 
     def get_engine(
         self,
@@ -563,5 +362,4 @@ class SnowflakeDiscovery:
             engine.dispose()
         self._engines.clear()
         self._discovered_connections.clear()
-        self._discovered_tables.clear()
         self._discovered_catalog.clear()

@@ -390,3 +390,61 @@ async def test_schema_tables_stream_includes_provider():
         remote_tables = [t for t in all_tables if t["source"] == "test_db"]
         assert len(remote_tables) == 1
         assert remote_tables[0]["provider"] == "sqlite"
+
+
+@pytest.mark.anyio
+async def test_schema_tables_sorted_alphabetically():
+    """Tables within each batch and batches themselves are sorted alphabetically."""
+    # Create two SQLite engines with multiple tables each
+    engine_b = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine_b.begin() as conn:
+        conn.execute(text("CREATE TABLE zebra (id INTEGER)"))
+        conn.execute(text("CREATE TABLE alpha (id INTEGER)"))
+
+    engine_a = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine_a.begin() as conn:
+        conn.execute(text("CREATE TABLE mango (id INTEGER)"))
+        conn.execute(text("CREATE TABLE banana (id INTEGER)"))
+
+    registry = ConnectionRegistry()
+    # Register in reverse alphabetical order
+    registry.register("z_conn", lambda _req: engine_b)
+    registry.register("a_conn", lambda _req: engine_a)
+
+    app, session_mgr = create_test_app(registry)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        session = session_mgr.create()
+
+        # Upload files in reverse alphabetical order
+        for name in ["charlie.csv", "alice.csv"]:
+            csv_content = b"x\n1\n2"
+            files = {"file": (name, io.BytesIO(csv_content), "text/csv")}
+            await client.post(f"/sessions/{session.id}/upload", files=files)
+
+        response = await client.get(f"/sessions/{session.id}/schema/tables")
+        lines = response.text.strip().split("\n")
+
+        # Line 1: local tables sorted
+        local_batch = json.loads(lines[0])["tables"]
+        local_names = [t["tableName"] for t in local_batch]
+        assert local_names == sorted(local_names)
+
+        # Lines 2+: connection batches sorted by connection name
+        conn_lines = lines[1:]
+        conn_sources = [json.loads(line)["tables"][0]["source"] for line in conn_lines]
+        assert conn_sources == ["a_conn", "z_conn"]
+
+        # Tables within each connection batch are sorted
+        for line in conn_lines:
+            tables = json.loads(line)["tables"]
+            names = [t["tableName"] for t in tables]
+            assert names == sorted(names)

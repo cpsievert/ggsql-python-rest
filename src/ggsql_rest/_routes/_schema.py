@@ -40,17 +40,22 @@ async def schema_tables(
     Discovery order: local DuckDB → registered connections → pins → snowflake
     """
 
+    def _yield_batch(entries: list[TableNameEntry]):
+        """Yield a sorted NDJSON line for a batch of table entries."""
+        entries.sort(key=lambda e: e.table_name)
+        return json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
+
     def generate():
-        # Local DuckDB tables (instant)
+        # Local DuckDB tables (instant, sorted)
         local_tables = [
             TableNameEntry(table_name=name, source=None)
             for name in session.tables
         ]
         if local_tables:
-            yield json.dumps({"tables": [t.model_dump(by_alias=True) for t in local_tables]}) + "\n"
+            yield _yield_batch(local_tables)
 
-        # Registered connections (one batch per connection)
-        for conn_name in registry.list_connections():
+        # Registered connections (one batch per connection, sorted by connection name)
+        for conn_name in sorted(registry.list_connections()):
             engine = registry.get_engine(conn_name, request)
             provider = registry.get_provider(conn_name)
             entries = [
@@ -58,25 +63,29 @@ async def schema_tables(
                 for name in get_remote_table_names(engine)
             ]
             if entries:
-                yield json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
+                yield _yield_batch(entries)
 
-        # Pins tables (one batch per owner)
+        # Pins tables (one batch per owner, sorted by owner)
         if pins is not None:
-            for owner, table_names in pins.stream_table_names(request):
+            pin_batches = list(pins.stream_table_names(request))
+            pin_batches.sort(key=lambda x: x[0])
+            for owner, table_names in pin_batches:
                 entries = [
                     TableNameEntry(table_name=tn, source=owner, provider="pins")
                     for tn in table_names
                 ]
-                yield json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
+                yield _yield_batch(entries)
 
-        # Snowflake tables (one batch per database)
+        # Snowflake tables (one batch per database, sorted by database name)
         if snowflake is not None:
-            for _db_name, batch in snowflake.stream_table_names(request):
+            sf_batches = list(snowflake.stream_table_names(request))
+            sf_batches.sort(key=lambda x: x[0])
+            for _db_name, batch in sf_batches:
                 entries = [
                     TableNameEntry(table_name=tn, source=cn, provider="snowflake")
                     for tn, cn in batch
                 ]
-                yield json.dumps({"tables": [e.model_dump(by_alias=True) for e in entries]}) + "\n"
+                yield _yield_batch(entries)
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 

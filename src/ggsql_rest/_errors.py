@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 
 class ApiError(Exception):
@@ -50,5 +51,15 @@ def register_error_handlers(app: FastAPI) -> None:
             content={
                 "status": "error",
                 "error": {"type": "ConnectionNotFound", "message": str(exc)},
+            },
+        )
+
+    @app.exception_handler(SQLAlchemyError)
+    async def handle_db_error(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "error",
+                "error": {"type": "DatabaseError", "message": str(exc)},
             },
         )

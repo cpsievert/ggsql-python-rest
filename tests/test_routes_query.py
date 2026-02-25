@@ -3,6 +3,7 @@
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine
 
 from ggsql_rest._errors import register_error_handlers
 from ggsql_rest._sessions import SessionManager
@@ -131,3 +132,27 @@ async def test_query_unknown_connection_returns_400():
         body = response.json()
         assert body["status"] == "error"
         assert body["error"]["type"] == "ConnectionNotFound"
+
+
+@pytest.mark.anyio
+async def test_sql_database_error_returns_502():
+    """Database errors (e.g., bad SQL on remote) return 502 with DatabaseError type."""
+    app, session_mgr, registry = create_test_app()
+
+    # Register a connection with a real engine, then send bad SQL
+    engine = create_engine("sqlite:///:memory:")
+    registry.register("test_db", lambda _req: engine)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_resp = await client.post("/sessions")
+        session_id = create_resp.json()["data"]["sessionId"]
+
+        response = await client.post(
+            f"/sessions/{session_id}/sql",
+            json={"query": "SELECT * FROM nonexistent_table", "source": "test_db"},
+        )
+        assert response.status_code == 502
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"]["type"] == "DatabaseError"

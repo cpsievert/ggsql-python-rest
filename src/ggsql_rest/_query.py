@@ -17,6 +17,72 @@ except ImportError:
     _HAS_CONNECTORX = False
 
 
+def _fetch_remote_into_duckdb(
+    engine: Engine,
+    sql: str,
+    session: Session,
+    table_name: str,
+    max_rows: int | None = None,
+) -> None:
+    """Fetch remote SQL results and register them in session's DuckDB.
+
+    When connectorx is available, fetches as a single Arrow DataFrame (zero-copy).
+    Otherwise, streams partitions via server-side cursor to bound memory usage.
+    """
+    cx_url = _connectorx_supported_url(engine) if _HAS_CONNECTORX else None
+
+    if cx_url is not None:
+        try:
+            df = _execute_via_connectorx(cx_url, sql, max_rows)
+            if max_rows is not None and len(df) > max_rows:
+                df = df.head(max_rows)
+            session.duckdb.register(table_name, df)
+            return
+        except Exception:
+            pass  # Fall through to cursor streaming path
+
+    # Cursor path: stream partitions into DuckDB to bound memory
+    with engine.connect() as conn:
+        conn = conn.execution_options(stream_results=True)
+        result = conn.execute(text(sql))
+        columns = list(result.keys())
+
+        created = False
+        total_rows = 0
+
+        for partition in result.partitions(10_000):
+            if max_rows is not None and total_rows >= max_rows:
+                break
+
+            data = {
+                col: [row[i] for row in partition]
+                for i, col in enumerate(columns)
+            }
+            chunk_df = pl.DataFrame(data)
+
+            if max_rows is not None:
+                remaining = max_rows - total_rows
+                if len(chunk_df) > remaining:
+                    chunk_df = chunk_df.head(remaining)
+
+            if not created:
+                session.duckdb.register(table_name, chunk_df)
+                created = True
+            else:
+                session.duckdb.register("__chunk__", chunk_df)
+                session.duckdb.execute_sql(
+                    f'INSERT INTO "{table_name}" SELECT * FROM __chunk__'
+                )
+
+            total_rows += len(chunk_df)
+
+        if not created:
+            # Empty result — register empty DataFrame with correct columns
+            session.duckdb.register(
+                table_name, pl.DataFrame({col: [] for col in columns})
+            )
+
+
 def execute_ggsql(
     query: str,
     session: Session,
@@ -47,14 +113,8 @@ def execute_ggsql(
     sql_portion = validated.sql()
 
     if engine is not None and sql_portion.strip():
-        df = execute_remote(engine, sql_portion, max_rows=max_rows)
-
-        # execute_remote fetches max_rows + 1 for truncation detection
-        if max_rows is not None and len(df) > max_rows:
-            df = df.head(max_rows)
-
         table_name = f"__remote_result_{uuid.uuid4().hex[:8]}__"
-        session.duckdb.register(table_name, df)
+        _fetch_remote_into_duckdb(engine, sql_portion, session, table_name, max_rows)
         local_query = f"SELECT * FROM {table_name} {validated.visual()}"
     else:
         local_query = query

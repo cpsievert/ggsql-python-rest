@@ -14,9 +14,10 @@ from .._models import (
 from .._connections import ConnectionRegistry
 from .._sessions import Session
 from .._snowflake import SnowflakeDiscovery
+from .._pins import PinsDiscovery
 from .._query import execute_ggsql, execute_sql
 from ._sessions import get_session
-from ._dependencies import get_registry, get_snowflake_discovery
+from ._dependencies import get_registry, get_snowflake_discovery, get_pins_discovery
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["query"])
 
@@ -42,11 +43,15 @@ async def query(
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
+    pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict:
     """Execute a ggsql query."""
     engine = None
     if body.connection:
-        engine = _resolve_engine(body.connection, request, registry, snowflake)
+        if pins is not None and pins.has_any_pin_for_query(body.query, request):
+            pins.load_pins_for_query(body.query, request, session)
+        else:
+            engine = _resolve_engine(body.connection, request, registry, snowflake)
 
     result = execute_ggsql(body.query, session, engine)
 
@@ -65,11 +70,15 @@ async def sql(
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
+    pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict:
     """Execute a pure SQL query."""
     engine = None
     if body.connection:
-        engine = _resolve_engine(body.connection, request, registry, snowflake)
+        if pins is not None and pins.has_any_pin_for_query(body.query, request):
+            pins.load_pins_for_query(body.query, request, session)
+        else:
+            engine = _resolve_engine(body.connection, request, registry, snowflake)
 
     result = execute_sql(body.query, session, engine)
 

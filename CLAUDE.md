@@ -41,11 +41,14 @@ src/ggsql_rest/
   _query.py            # Query execution (hybrid local/remote)
   _schema.py           # Schema introspection (local + remote, optional stats)
   _sessions.py         # Session management (isolated DuckDB per session, auto-expiry)
+  _snowflake.py        # Snowflake discovery (streaming table names, OAuth via posit-sdk)
+  _pins.py             # Posit Connect Pins discovery (on-demand loading into DuckDB)
   _routes/
     __init__.py
+    _dependencies.py   # FastAPI dependency placeholders (registry, snowflake, pins)
     _health.py         # GET /health
     _query.py          # POST /sessions/{id}/query, /sessions/{id}/sql
-    _schema.py         # GET /sessions/{id}/schema
+    _schema.py         # GET /sessions/{id}/schema (streaming NDJSON for table discovery)
     _sessions.py       # Session CRUD + file upload
 ```
 
@@ -78,6 +81,13 @@ Currently affected routes: `create_session`, `delete_session`, `upload_file`, `q
 - **Pydantic**: Request/response validation
 - **PyYAML**: YAML config file loading
 - **uvicorn**: ASGI server
+
+### Optional dependencies
+
+- **pins** (extra `pins`): Posit Connect Pins discovery and loading
+- **pyarrow** (extra `pins`): Feather/Arrow format support for pins
+- **posit-sdk** (extras `pins`, `snowflake`): Connect authentication
+- **snowflake-connector-python** / **snowflake-sqlalchemy** (extra `snowflake`): Snowflake connectivity
 
 ## Commands
 

@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .._connections import ConnectionRegistry
-from .._models import SchemaResponse, TableNameEntry, TableNamesResponse, TableSchema, success_envelope
+from .._models import ColumnSchema, SchemaResponse, TableNameEntry, TableNamesResponse, TableSchema, success_envelope
 from .._schema import get_local_table_schema, get_remote_table_names, get_remote_table_schemas
 from .._sessions import Session
 from .._snowflake import SnowflakeDiscovery
+from .._pins import PinsDiscovery
 from ._sessions import get_session
-from ._dependencies import get_registry, get_snowflake_discovery
+from ._dependencies import get_registry, get_snowflake_discovery, get_pins_discovery
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["schema"])
 
@@ -24,6 +25,7 @@ async def schema_tables(
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
+    pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict | StreamingResponse:
     """Return table names for all available tables (local + remote) without columns."""
     # Local + remote tables (always instant)
@@ -48,6 +50,10 @@ async def schema_tables(
             snowflake_table_names = snowflake.get_table_names(request)
             for table_name, connection_name in snowflake_table_names:
                 tables.append(TableNameEntry(table_name=table_name, connection=connection_name, provider="snowflake"))
+        if pins is not None:
+            for owner, table_names in pins.stream_table_names(request):
+                for table_name in table_names:
+                    tables.append(TableNameEntry(table_name=table_name, connection=owner, provider="pins"))
         return success_envelope(TableNamesResponse(tables=tables))
 
     # Streaming path: NDJSON
@@ -63,6 +69,16 @@ async def schema_tables(
                 entries = [
                     TableNameEntry(table_name=tn, connection=cn, provider="snowflake")
                     for tn, cn in batch
+                ]
+                line = {"tables": [e.model_dump(by_alias=True) for e in entries]}
+                yield json.dumps(line) + "\n"
+
+        # Pins tables (one batch per owner)
+        if pins is not None:
+            for owner, table_names in pins.stream_table_names(request):
+                entries = [
+                    TableNameEntry(table_name=tn, connection=owner, provider="pins")
+                    for tn in table_names
                 ]
                 line = {"tables": [e.model_dump(by_alias=True) for e in entries]}
                 yield json.dumps(line) + "\n"
@@ -112,6 +128,7 @@ async def schema_table(
     session: Session = Depends(get_session),
     registry: ConnectionRegistry = Depends(get_registry),
     snowflake: SnowflakeDiscovery | None = Depends(get_snowflake_discovery),
+    pins: PinsDiscovery | None = Depends(get_pins_discovery),
 ) -> dict:
     """Return schema for a single table (local or remote)."""
     table_schema: TableSchema | None = None
@@ -148,6 +165,26 @@ async def schema_table(
             raise HTTPException(
                 status_code=404,
                 detail=f"Table '{table_name}' not found in Snowflake connection '{connection}'"
+            )
+
+    # Pins table (connection is the owner name, e.g., "garrick")
+    elif pins is not None and pins.has_pin(table_name, request):
+        # Read schema metadata only (no full data download)
+        columns = pins.get_pin_schema(table_name, request)
+        if columns:
+            table_schema = TableSchema(
+                table_name=table_name,
+                connection=connection,
+                columns=[
+                    ColumnSchema(column_name=col_name, data_type=col_type)
+                    for col_name, col_type in columns
+                ],
+            )
+        else:
+            # Fallback: load the full pin into DuckDB
+            pins.ensure_pin_loaded(session.id, table_name, request, session)
+            table_schema = get_local_table_schema(
+                session.duckdb, table_name, include_stats
             )
 
     # Connection not found

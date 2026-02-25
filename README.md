@@ -14,6 +14,7 @@ ggsql-rest provides an HTTP interface for executing ggsql queries. It implements
 - **Schema introspection**: Discover tables and columns across local and remote databases, with optional statistics
 - **Connection registry**: Named database connections with per-user caching and LRU eviction
 - **Pure SQL endpoint**: Execute SQL queries without visualization
+- **Posit Connect Pins**: Discover and query pinned datasets from Posit Connect (on-demand loading into DuckDB)
 - **CLI**: Run the server from the command line with YAML-based connection configuration
 
 ## Installation
@@ -22,12 +23,18 @@ ggsql-rest provides an HTTP interface for executing ggsql queries. It implements
 pip install ggsql-rest
 ```
 
-Or for development:
+With optional Posit Connect Pins support:
+
+```bash
+pip install ggsql-rest[pins]
+```
+
+For development:
 
 ```bash
 git clone https://github.com/posit-dev/ggsql-python-rest.git
 cd ggsql-python-rest
-uv sync
+uv sync --extra pins
 ```
 
 ## Quick start
@@ -62,6 +69,20 @@ CLI options:
 | `--cors-origins` | — | Space-separated list of allowed CORS origins |
 
 Data loaded via `--load-sample-data` and `--load-data` is seeded into every new session, so all users see the same base tables. Users can also upload additional files per-session via the upload endpoint.
+
+### Posit Connect Pins
+
+Install the optional `pins` dependency group to enable pin discovery:
+
+```bash
+pip install ggsql-rest[pins]
+```
+
+When the `pins` package is installed, ggsql-rest automatically discovers pinned datasets that the viewer has read access to. Authentication and server URL are resolved automatically by `posit-sdk` and the `pins` package through standard Posit environment variables (`CONNECT_SERVER`, `CONNECT_API_KEY`). On Posit Connect, these are set automatically; on Workbench, `posit-sdk` resolves credentials through its standard environment detection. If credentials cannot be resolved, a warning is logged and pin discovery is silently skipped.
+
+Only tabular formats are supported: CSV, Parquet, Feather, and Arrow. Pin data is loaded into DuckDB **on-demand** — when a query or schema inspection targets a pin table — not at startup.
+
+Pin names are sanitized for DuckDB: `"username/dataset"` becomes `"username__dataset"`. In query requests, use `"connection": "pins"` to target pin tables.
 
 ### YAML connection configuration
 

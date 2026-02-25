@@ -17,12 +17,14 @@ if TYPE_CHECKING:
     import polars as pl
 
     from ._snowflake import SnowflakeDiscovery
+    from ._pins import PinsDiscovery
 
 
 def _make_lifespan(
     registry: ConnectionRegistry,
     session_manager: SessionManager,
     snowflake: SnowflakeDiscovery | None = None,
+    pins: PinsDiscovery | None = None,
 ):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -43,6 +45,7 @@ def create_app(
     cors_origins: list[str] | None = None,
     seed_data: list[tuple[str, pl.DataFrame]] | None = None,
     snowflake: SnowflakeDiscovery | None = None,
+    pins: PinsDiscovery | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
     session_manager = SessionManager(session_timeout_mins, seed_data=seed_data)
@@ -50,15 +53,17 @@ def create_app(
     app = FastAPI(
         title="ggsql REST API",
         description="REST API server for ggsql with SQLAlchemy backend support",
-        lifespan=_make_lifespan(registry, session_manager, snowflake),
+        lifespan=_make_lifespan(registry, session_manager, snowflake, pins),
     )
 
     # Set up dependency overrides
-    from ._routes._dependencies import get_registry, get_snowflake_discovery
+    from ._routes._dependencies import get_registry, get_snowflake_discovery, get_pins_discovery
     app.dependency_overrides[_sessions.get_session_manager] = lambda: session_manager
     app.dependency_overrides[get_registry] = lambda: registry
     if snowflake is not None:
         app.dependency_overrides[get_snowflake_discovery] = lambda: snowflake
+    if pins is not None:
+        app.dependency_overrides[get_pins_discovery] = lambda: pins
 
     # CORS (consumer configurable)
     if cors_origins:

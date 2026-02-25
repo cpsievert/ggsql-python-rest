@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from snowflake.connector import SnowflakeConnection
     from sqlalchemy import Engine
 
-    from ._models import ColumnSchema, TableSchema
+    from ._models import TableSchema
 
 # Optional import — only available on Connect
 try:
@@ -30,7 +30,7 @@ try:
 except ImportError:
     PositAuthenticator = None  # type: ignore[assignment, misc]
 
-_SESSION_TOKEN_HEADER = "posit-connect-user-session-token"
+from ggsql_rest._constants import SESSION_TOKEN_HEADER
 
 
 def _parse_snowflake_type(data_type_json: str) -> str:
@@ -109,7 +109,7 @@ class SnowflakeDiscovery:
         if schema:
             kwargs["schema"] = schema
 
-        session_token = request.headers.get(_SESSION_TOKEN_HEADER)
+        session_token = request.headers.get(SESSION_TOKEN_HEADER)
 
         if session_token:
             # Connect mode: OAuth token exchange

@@ -50,6 +50,7 @@ class TestSnowflakeConnection:
         discovery = SnowflakeDiscovery(
             account="test-account",
             warehouse="TEST_WH",
+            integration_guid="sf-integration-guid",
         )
         request = _make_request(
             {
@@ -73,6 +74,7 @@ class TestSnowflakeConnection:
             mock_auth_cls.assert_called_once_with(
                 local_authenticator="EXTERNALBROWSER",
                 user_session_token="test-token-123",
+                audience="sf-integration-guid",
             )
             mock_sf.connect.assert_called_once_with(
                 account="test-account",

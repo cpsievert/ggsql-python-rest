@@ -33,7 +33,6 @@ except ImportError:
 
 from ggsql_rest._constants import SESSION_TOKEN_HEADER
 
-
 def parse_snowflake_type(data_type_json: str) -> str:
     """SHOW COLUMNS returns data_type as JSON, e.g.:
     {"type":"FIXED","precision":38,"scale":0,"nullable":true}
@@ -66,11 +65,13 @@ class SnowflakeDiscovery:
         warehouse: str,
         connection_name: str | None = None,
         databases: list[str] | None = None,
+        integration_guid: str | None = None,
     ):
         self.account = account
         self.warehouse = warehouse
         self.connection_name = connection_name
         self.databases = databases
+        self.integration_guid = integration_guid
 
         self._discovered_connections: dict[str, dict[str, tuple[str, str]]] = {}
         self._discovered_catalog: dict[str, list[tuple[str, str, str, str]]] = {}
@@ -105,6 +106,7 @@ class SnowflakeDiscovery:
             auth = PositAuthenticator(
                 local_authenticator="EXTERNALBROWSER",
                 user_session_token=session_token,
+                audience=self.integration_guid,
             )
             kwargs["account"] = self.account
             kwargs["authenticator"] = auth.authenticator
@@ -363,6 +365,7 @@ class SnowflakeDiscovery:
             auth = PositAuthenticator(
                 local_authenticator="EXTERNALBROWSER",
                 user_session_token=session_token,
+                audience=self.integration_guid,
             )
             token = auth.token
         else:

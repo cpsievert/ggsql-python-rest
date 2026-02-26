@@ -31,8 +31,8 @@ class PinsDiscovery:
         """Yield ``(owner, [table_name, ...])`` batches. Discovery is cached per viewer."""
         try:
             api_key = self._resolve_api_key(request)
-        except ValueError as exc:
-            warnings.warn(str(exc), stacklevel=2)
+        except Exception as exc:
+            warnings.warn(f"Pins discovery skipped: {exc}", stacklevel=2)
             return
 
         if api_key in self._discovered_pins:

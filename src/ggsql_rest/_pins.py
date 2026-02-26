@@ -22,10 +22,11 @@ class PinEntry(NamedTuple):
 class PinsDiscovery:
     """Auth: session token exchange on Connect, CONNECT_API_KEY locally."""
 
-    def __init__(self) -> None:
+    def __init__(self, integration_guid: str | None = None) -> None:
         self._discovered_pins: dict[str, list[PinEntry]] = {}
         self._loaded_pins: dict[str, set[str]] = {}
         self._token_cache: dict[str, str] = {}  # session_token -> viewer api_key
+        self.integration_guid = integration_guid
 
     def stream_table_names(self, request: Request) -> Iterator[tuple[str, list[str]]]:
         """Yield ``(owner, [table_name, ...])`` batches. Discovery is cached per viewer."""
@@ -177,7 +178,10 @@ class PinsDiscovery:
             from posit.connect import Client
 
             owner_client = Client()
-            viewer_client = owner_client.with_user_session_token(session_token)
+            viewer_client = owner_client.with_user_session_token(
+                session_token,
+                audience=self.integration_guid,
+            )
             viewer_api_key = viewer_client.cfg.api_key
             self._token_cache[session_token] = viewer_api_key
             if viewer_api_key is None:

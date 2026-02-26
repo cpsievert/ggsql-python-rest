@@ -230,7 +230,8 @@ class TestPinsDiscoveryStreamTableNames:
             batches = list(discovery.stream_table_names(request))
 
         mock_owner_client.with_user_session_token.assert_called_once_with(
-            "session-token-abc"
+            "session-token-abc",
+            audience=None,
         )
         assert len(batches) == 1
 
@@ -432,3 +433,51 @@ class TestGetPinSchema:
         assert len(columns) == 2
         assert columns[0][0] == "a"
         assert columns[1][0] == "b"
+
+
+class TestResolveApiKeyWithAudience:
+    def test_session_token_passes_audience(self):
+        """When integration_guid is set, audience is forwarded to with_user_session_token."""
+        pins = PinsDiscovery(integration_guid="connect-api-guid")
+        request = _make_request(
+            {"Posit-Connect-User-Session-Token": "test-session-token"}
+        )
+
+        mock_viewer = MagicMock()
+        mock_viewer.cfg.api_key = "resolved-api-key"
+
+        with patch("posit.connect.Client") as mock_client_cls:
+            mock_owner = MagicMock()
+            mock_owner.with_user_session_token.return_value = mock_viewer
+            mock_client_cls.return_value = mock_owner
+
+            result = pins._resolve_api_key(request)
+
+            mock_owner.with_user_session_token.assert_called_once_with(
+                "test-session-token",
+                audience="connect-api-guid",
+            )
+            assert result == "resolved-api-key"
+
+    def test_session_token_no_audience_when_none(self):
+        """When integration_guid is not set, audience defaults to None."""
+        pins = PinsDiscovery()
+        request = _make_request(
+            {"Posit-Connect-User-Session-Token": "test-session-token"}
+        )
+
+        mock_viewer = MagicMock()
+        mock_viewer.cfg.api_key = "resolved-api-key"
+
+        with patch("posit.connect.Client") as mock_client_cls:
+            mock_owner = MagicMock()
+            mock_owner.with_user_session_token.return_value = mock_viewer
+            mock_client_cls.return_value = mock_owner
+
+            result = pins._resolve_api_key(request)
+
+            mock_owner.with_user_session_token.assert_called_once_with(
+                "test-session-token",
+                audience=None,
+            )
+            assert result == "resolved-api-key"

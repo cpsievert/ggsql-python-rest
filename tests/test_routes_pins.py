@@ -102,7 +102,7 @@ async def test_non_streaming_schema_includes_pins(app_with_pins):
 
 @pytest.mark.anyio
 async def test_query_with_pins_connection_loads_data():
-    """Query with connection='pins' should trigger pin loading before execution."""
+    """Query with provider='pins' should trigger pin loading before execution."""
     test_df = pd.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]})
 
     mock_board = MagicMock()
@@ -127,7 +127,7 @@ async def test_query_with_pins_connection_loads_data():
 
             resp = await client.post(
                 f"/api/v1/sessions/{session_id}/sql",
-                json={"query": "SELECT * FROM test__data", "source": "pins"},
+                json={"query": "SELECT * FROM test__data", "source": "pins", "provider": "pins"},
             )
             assert resp.status_code == 200
             data = resp.json()["data"]

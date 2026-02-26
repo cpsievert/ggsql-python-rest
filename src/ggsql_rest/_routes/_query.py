@@ -50,7 +50,7 @@ async def query(
     engine = None
     adbc_conn = None
     if body.source:
-        if pins is not None and pins.has_any_pin_for_query(body.query, request):
+        if body.provider == "pins" and pins is not None:
             pins.load_pins_for_query(body.query, request, session)
         else:
             engine, adbc_conn = resolve_source(
@@ -81,7 +81,7 @@ async def sql(
     engine = None
     adbc_conn = None
     if body.source:
-        if pins is not None and pins.has_any_pin_for_query(body.query, request):
+        if body.provider == "pins" and pins is not None:
             pins.load_pins_for_query(body.query, request, session)
         else:
             engine, adbc_conn = resolve_source(

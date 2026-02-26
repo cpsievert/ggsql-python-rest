@@ -18,12 +18,14 @@ def success_envelope(data: CamelModel | None = None) -> dict:
 class QueryRequest(CamelModel):
     query: str
     source: str | None = None
+    provider: str | None = None
     max_rows: int | None = None
 
 
 class SqlRequest(CamelModel):
     query: str
     source: str | None = None
+    provider: str | None = None
     timeout_seconds: int | None = None
 
 

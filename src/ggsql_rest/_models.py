@@ -90,6 +90,12 @@ class TableNamesResponse(CamelModel):
     tables: list[TableNameEntry]
 
 
+class ProviderInfo(CamelModel):
+    name: str
+    label: str
+    requires_auth: bool
+
+
 class ErrorDetail(BaseModel):
     message: str
     type: str

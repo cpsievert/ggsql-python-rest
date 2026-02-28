@@ -104,3 +104,20 @@ class ErrorDetail(BaseModel):
 class ErrorResponse(BaseModel):
     status: str = "error"
     error: ErrorDetail
+
+
+class ValidateQueryItem(CamelModel):
+    query: str
+
+
+class ValidateRequest(CamelModel):
+    queries: list[ValidateQueryItem]
+
+
+class ValidationResult(CamelModel):
+    valid: bool
+    error: str | None = None
+
+
+class ValidateResponse(CamelModel):
+    results: list[ValidationResult]

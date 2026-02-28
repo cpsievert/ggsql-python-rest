@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import Engine
+from ggsql import validate
 
 from .._models import (
     QueryRequest,
@@ -9,6 +10,9 @@ from .._models import (
     QueryMetadata,
     SqlRequest,
     SqlResponse,
+    ValidateRequest,
+    ValidateResponse,
+    ValidationResult,
     success_envelope,
 )
 from .._connections import ConnectionRegistry
@@ -97,3 +101,63 @@ async def sql(
     )
 
     return success_envelope(SqlResponse(**result))
+
+
+@router.post("/validate")
+async def validate_queries(
+    body: ValidateRequest,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Validate a batch of ggsql queries.
+
+    For each query:
+    1. Parse with ggsql.validate() to catch parse errors
+    2. If the query has VISUALISE, extract SQL with .sql()
+    3. If no VISUALISE, treat the whole query as SQL
+    4. Run EXPLAIN on the SQL to catch column/table errors
+    5. Return {valid: true} or {valid: false, error: "..."}
+
+    All exceptions are caught per-query so one bad query doesn't abort the batch.
+    """
+    results: list[ValidationResult] = []
+
+    for item in body.queries:
+        try:
+            # Step 1: Parse with ggsql.validate
+            validated = validate(item.query)
+
+            # Check for parse errors
+            parse_errors = [
+                e for e in validated.errors()
+                if e.get("message", "").startswith("Parse error")
+            ]
+            if parse_errors:
+                messages = "; ".join(e["message"] for e in parse_errors)
+                results.append(ValidationResult(valid=False, error=messages))
+                continue
+
+            # Step 2: Determine SQL to validate
+            if validated.has_visual():
+                # Query has VISUALISE — extract SQL portion
+                sql = validated.sql()
+            else:
+                # Plain SQL query
+                sql = item.query
+
+            # Step 3: Run EXPLAIN to catch semantic errors
+            if sql.strip():
+                try:
+                    session.duckdb.execute_sql(f"EXPLAIN {sql}")
+                except Exception as e:
+                    # DuckDB error — invalid SQL
+                    results.append(ValidationResult(valid=False, error=str(e)))
+                    continue
+
+            # Query is valid
+            results.append(ValidationResult(valid=True))
+
+        except Exception as e:
+            # Catch-all for any unexpected errors
+            results.append(ValidationResult(valid=False, error=str(e)))
+
+    return success_envelope(ValidateResponse(results=results))
